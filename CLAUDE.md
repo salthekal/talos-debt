@@ -44,6 +44,7 @@ Interface languages: Arabic (right to left) and English. Debtor message language
   SET LOCAL app.actor_type = 'user';            -- or 'system', 'ai'
   ```
 - Database roles: `talos_app` (API, RLS applies) and `talos_worker` (scheduler and webhooks, bypasses RLS). Keep worker code small and careful.
+  - `BYPASSRLS` is not inherited through role membership, so the worker login role (`talos_jobs`) must be created with `BYPASSRLS` itself. `assertWorkerRole` refuses to start otherwise.
 - The database already enforces these, so do not duplicate or fight them in code:
   - Approved payments recalculate `debts.amount_outstanding`; reaching zero marks the debt `paid` and cancels pending reminders.
   - A new open dispute marks the debt `disputed` and cancels pending reminders.
@@ -64,6 +65,10 @@ Interface languages: Arabic (right to left) and English. Debtor message language
 - WhatsApp sending goes through `sendReminder` in `api/src/whatsapp/outbound.ts`. It checks stop rules, working hours, the phone and the template, saves the message as `queued`, calls Meta outside any transaction, then saves `sent` or `failed`. Do not call Meta from inside `withTenant`.
 - Outside production, every message is redirected to `WHATSAPP_DEV_REDIRECT_TO` and sending is refused without it. Never remove this; fake debtors' numbers must never receive anything. The dev overrides are refused in production.
 - Meta is behind the `WhatsAppSender` interface; tests use a fake sender. Tests never call Meta.
+- The AI is behind the `LlmClient` interface in `api/src/ai/llm.ts` (Gemini today); tests use a fake. Call it outside any transaction. Every reply passes `checkReply` in `api/src/agent/decision.ts` before sending; a failed check sends the safe fallback reply and flags the conversation for staff.
+- `AI_FREE_TIER=true` is for fake data only and is refused in production.
+- The webhook (`/webhooks/whatsapp`) checks Meta's signature with `WHATSAPP_APP_SECRET` and uses the worker connection only to find the sender and store raw events; everything else runs inside `withTenant` with `actor_type = 'ai'`.
+- Each test file starts from a freshly reset `talos_test` database (`api/test/setup.ts`).
 
 ## WhatsApp agent rules (must always hold)
 
@@ -88,8 +93,8 @@ Interface languages: Arabic (right to left) and English. Debtor message language
 1. Repository and dev database with the schema and fake seed data (done: `docker compose up -d` then `./scripts/db-reset.sh`)
 2. Back end skeleton with the per-request client setting (done: `api/`, run `npm run dev`, tests with `npm test`)
 3. WhatsApp outbound template send (test number) (done: `api/src/whatsapp/`, `POST /api/debts/:id/send-reminder`, `npm run whatsapp:ping`)
-4. WhatsApp inbound webhook, matched to the debtor
-5. Agent reply grounded in the debtor's records, validated, sent and logged
+4. WhatsApp inbound webhook, matched to the debtor (done: `api/src/routes/webhooks.ts`)
+5. Agent reply grounded in the debtor's records, validated, sent and logged (done: `api/src/agent/`, `api/src/ai/llm.ts`)
 6. Dashboard: debtor list, debtor timeline, payment and dispute approval queue, totals
 7. Excel import with validation
 8. Scheduler for automatic reminders
