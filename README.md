@@ -69,8 +69,29 @@ x-user-id:   22222222-2222-4222-8222-000000000002
 | GET | `/api/approvals` | Payments waiting for review and open disputes |
 | POST | `/api/payments/:id/approve` | Approve a payment (owner, admin, staff) |
 | POST | `/api/payments/:id/reject` | Reject a payment with `{ "reason": "..." }` |
+| POST | `/api/debts/:id/send-reminder` | Send a reminder now, with `{ "purpose": "follow_up" }` (owner, admin, staff) |
 
 Money is returned as text (for example `"1280.50"`) so it is never rounded.
+
+### Sending WhatsApp messages in development
+
+1. In `api/.env`, fill in `WHATSAPP_TOKEN` and `WHATSAPP_PHONE_NUMBER_ID` (from Meta, WhatsApp, API Setup)
+   and set `WHATSAPP_DEV_REDIRECT_TO` to your own number (added as a test recipient in Meta).
+2. Check the connection: `npm run whatsapp:ping` sends Meta's `hello_world` to your phone.
+3. Send through the full system (server running with `npm run dev`):
+
+   ```bash
+   curl -X POST http://localhost:3000/api/debts/66666666-6666-4666-8666-000000000002/send-reminder \
+     -H 'x-client-id: 11111111-1111-4111-8111-111111111111' \
+     -H 'x-user-id: 22222222-2222-4222-8222-000000000002' \
+     -H 'content-type: application/json' -d '{"purpose":"follow_up"}'
+   ```
+
+Safety in development: every message goes to `WHATSAPP_DEV_REDIRECT_TO`, never to a debtor, and the
+server refuses to send if it is not set. Reminders are only sent within the client's working hours
+and days, never for paid, disputed, paused or legal debts, and never to wrong or opted-out numbers.
+Until your own templates are approved in Meta, `WHATSAPP_DEV_TEMPLATE=hello_world:en_US` sends
+Meta's test template instead.
 
 ### Settings
 
