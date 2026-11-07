@@ -61,6 +61,9 @@ Interface languages: Arabic (right to left) and English. Debtor message language
 - Validate params, query and body with zod (`parseOr400`). Return 404, not 403, for another client's records, so their existence is not revealed.
 - One `pg` connection runs one query at a time: inside `withTenant`, await queries one after another (no `Promise.all` on the same connection).
 - Tests live in `api/test`, run against a fresh `talos_test` database, and must cover tenant isolation and anything touching money.
+- WhatsApp sending goes through `sendReminder` in `api/src/whatsapp/outbound.ts`. It checks stop rules, working hours, the phone and the template, saves the message as `queued`, calls Meta outside any transaction, then saves `sent` or `failed`. Do not call Meta from inside `withTenant`.
+- Outside production, every message is redirected to `WHATSAPP_DEV_REDIRECT_TO` and sending is refused without it. Never remove this; fake debtors' numbers must never receive anything. The dev overrides are refused in production.
+- Meta is behind the `WhatsAppSender` interface; tests use a fake sender. Tests never call Meta.
 
 ## WhatsApp agent rules (must always hold)
 
@@ -84,7 +87,7 @@ Interface languages: Arabic (right to left) and English. Debtor message language
 
 1. Repository and dev database with the schema and fake seed data (done: `docker compose up -d` then `./scripts/db-reset.sh`)
 2. Back end skeleton with the per-request client setting (done: `api/`, run `npm run dev`, tests with `npm test`)
-3. WhatsApp outbound template send (test number)
+3. WhatsApp outbound template send (test number) (done: `api/src/whatsapp/`, `POST /api/debts/:id/send-reminder`, `npm run whatsapp:ping`)
 4. WhatsApp inbound webhook, matched to the debtor
 5. Agent reply grounded in the debtor's records, validated, sent and logged
 6. Dashboard: debtor list, debtor timeline, payment and dispute approval queue, totals
