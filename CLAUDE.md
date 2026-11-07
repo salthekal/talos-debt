@@ -51,6 +51,17 @@ Interface languages: Arabic (right to left) and English. Debtor message language
   - A payment cannot leave `pending_approval` without a reviewer. A legal case cannot move past `ready` without approval.
 - Dashboard numbers come from the views `app.v_debt_overview` and `app.v_client_totals`.
 
+## Back end conventions (`/api`)
+
+- Every query that touches client data goes through `withTenant(pool, ctx, fn)` in `api/src/db.ts`. It opens a transaction and sets `app.client_id`, `app.user_id` and `app.actor_type` with `set_config(..., true)`. Never query client tables outside it.
+- The API connects as `talos_api` (member of `talos_app`). `assertRlsEnforced` stops the server from starting with a superuser or an RLS-bypassing role. Do not remove it.
+- Login is a development placeholder (`AUTH_MODE=dev`, headers `x-client-id` and `x-user-id`), checked against `app.users` under RLS. It is refused in production.
+- Role checks use `requireRole` in `api/src/auth.ts`. Viewers can only read.
+- Money stays a string end to end (`pg` returns `numeric` as text). Never convert amounts to JavaScript numbers.
+- Validate params, query and body with zod (`parseOr400`). Return 404, not 403, for another client's records, so their existence is not revealed.
+- One `pg` connection runs one query at a time: inside `withTenant`, await queries one after another (no `Promise.all` on the same connection).
+- Tests live in `api/test`, run against a fresh `talos_test` database, and must cover tenant isolation and anything touching money.
+
 ## WhatsApp agent rules (must always hold)
 
 1. **The AI never decides an amount.** Amounts, dates and references come from the database and are passed into the prompt. Validate every AI reply: any amount it mentions must match the record.
@@ -72,7 +83,7 @@ Interface languages: Arabic (right to left) and English. Debtor message language
 ## Development order (current plan)
 
 1. Repository and dev database with the schema and fake seed data (done: `docker compose up -d` then `./scripts/db-reset.sh`)
-2. Back end skeleton with the per-request client setting
+2. Back end skeleton with the per-request client setting (done: `api/`, run `npm run dev`, tests with `npm test`)
 3. WhatsApp outbound template send (test number)
 4. WhatsApp inbound webhook, matched to the debtor
 5. Agent reply grounded in the debtor's records, validated, sent and logged
