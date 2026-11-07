@@ -93,6 +93,34 @@ and days, never for paid, disputed, paused or legal debts, and never to wrong or
 Until your own templates are approved in Meta, `WHATSAPP_DEV_TEMPLATE=hello_world:en_US` sends
 Meta's test template instead.
 
+### WhatsApp agent (replies to debtors)
+
+When a debtor writes back, Meta calls `POST /webhooks/whatsapp`. The server:
+
+1. checks Meta's signature, stores the event in `app.webhook_events` (Meta's retries are ignored),
+2. finds the debtor by phone number and saves the message,
+3. asks the AI what the message means, giving it only this debtor's records,
+4. checks the AI's reply: every amount must come from the database (or the debtor's own words),
+   and no threats or mentions of family, employer or police. A failed check, or an AI error, is
+   replaced by a safe "our team will contact you" reply and staff are alerted,
+5. acts on it: records a promise to pay (and a check after the date), opens a dispute (which stops
+   reminders), marks a wrong or opted-out number, or alerts staff about a receipt,
+6. replies within working hours, or holds the reply for staff outside them,
+7. logs the AI call in `ai.agent_runs`.
+
+To try it in development:
+
+1. In `api/.env`, set `WORKER_DATABASE_URL`, `WHATSAPP_APP_SECRET`, `WHATSAPP_VERIFY_TOKEN`,
+   `AI_PROVIDER=gemini` and `AI_API_KEY` (a free key from Google AI Studio). The free tier is for
+   fake data only: Google may use free-tier prompts to improve its models, so the server refuses it
+   in production.
+2. Make the server reachable from the internet (for example `npx localtunnel --port 3000` or a
+   Replit deployment), then in Meta, WhatsApp, Configuration, set the callback URL to
+   `https://<your address>/webhooks/whatsapp`, the verify token to `WHATSAPP_VERIFY_TOKEN`, and
+   subscribe to `messages`.
+3. Send a reminder (above), then reply from your phone. In development, messages from
+   `WHATSAPP_DEV_REDIRECT_TO` are treated as coming from the last debtor you messaged.
+
 ### Settings
 
 Copy `.env.example` to `.env` and fill in the values. Never commit `.env`.

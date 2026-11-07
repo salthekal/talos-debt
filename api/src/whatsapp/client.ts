@@ -15,8 +15,16 @@ export type SendResult =
   | { ok: true; providerMessageId: string }
   | { ok: false; errorCode: string; errorMessage: string; retryable: boolean };
 
+export interface TextMessage {
+  phoneNumberId: string;
+  to: string;
+  text: string;
+}
+
 export interface WhatsAppSender {
   sendTemplate(msg: TemplateMessage): Promise<SendResult>;
+  /** Free-form text. Only allowed within 24 hours of the person's last message. */
+  sendText(msg: TextMessage): Promise<SendResult>;
 }
 
 export class MetaCloudSender implements WhatsAppSender {
@@ -26,8 +34,17 @@ export class MetaCloudSender implements WhatsAppSender {
     private readonly fetchImpl: typeof fetch = fetch,
   ) {}
 
+  async sendText(msg: TextMessage): Promise<SendResult> {
+    return this.post(msg.phoneNumberId, {
+      messaging_product: 'whatsapp',
+      recipient_type: 'individual',
+      to: msg.to.replace(/^\+/, ''),
+      type: 'text',
+      text: { body: msg.text, preview_url: false },
+    });
+  }
+
   async sendTemplate(msg: TemplateMessage): Promise<SendResult> {
-    const url = `https://graph.facebook.com/${this.apiVersion}/${encodeURIComponent(msg.phoneNumberId)}/messages`;
     const body = {
       messaging_product: 'whatsapp',
       recipient_type: 'individual',
@@ -41,7 +58,11 @@ export class MetaCloudSender implements WhatsAppSender {
           : {}),
       },
     };
+    return this.post(msg.phoneNumberId, body);
+  }
 
+  private async post(phoneNumberId: string, body: unknown): Promise<SendResult> {
+    const url = `https://graph.facebook.com/${this.apiVersion}/${encodeURIComponent(phoneNumberId)}/messages`;
     let res: Response;
     try {
       res = await this.fetchImpl(url, {

@@ -1,6 +1,6 @@
 import type pg from 'pg';
 import type { Config } from '../config.js';
-import { withTenant, type TenantContext } from '../db.js';
+import { withTenant, type Db, type TenantContext } from '../db.js';
 import { renderTemplate, type WhatsAppSender } from './client.js';
 
 export type ReminderPurpose = 'first_reminder' | 'follow_up' | 'final_notice';
@@ -49,7 +49,7 @@ interface DebtRow {
   sender_phone_number_id: string | null;
 }
 
-interface RulesRow {
+export interface RulesRow {
   working_hours_start: string;
   working_hours_end: string;
   working_days: number[];
@@ -68,6 +68,22 @@ export function localDayAndTime(now: Date, timeZone: string): { day: number; tim
   const get = (t: string) => parts.find((p) => p.type === t)?.value ?? '';
   const day = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].indexOf(get('weekday'));
   return { day, time: `${get('hour')}:${get('minute')}` };
+}
+
+/** The client's working hours and days, with Saudi defaults. Call inside withTenant. */
+export async function loadRules(db: Db): Promise<RulesRow> {
+  const { rows } = await db.query<RulesRow>(
+    `SELECT r.working_hours_start::text, r.working_hours_end::text, r.working_days, c.timezone
+       FROM app.clients c LEFT JOIN app.follow_up_rules r ON r.client_id = c.id
+      WHERE c.id = app.current_client_id()`,
+  );
+  const row = rows[0];
+  return {
+    working_hours_start: row?.working_hours_start ?? '09:00',
+    working_hours_end: row?.working_hours_end ?? '20:00',
+    working_days: row?.working_days ?? [0, 1, 2, 3, 4],
+    timezone: row?.timezone ?? 'Asia/Riyadh',
+  };
 }
 
 export function withinWorkingHours(now: Date, rules: RulesRow): boolean {
@@ -125,17 +141,7 @@ export async function sendReminder(
       throw new SendBlocked('debtor_not_contactable', `Debtor cannot be contacted (status: ${debt.debtor_status})`);
     }
 
-    const rules = (
-      await db.query<RulesRow>(
-        `SELECT r.working_hours_start::text, r.working_hours_end::text, r.working_days, c.timezone
-           FROM app.follow_up_rules r JOIN app.clients c ON c.id = r.client_id`,
-      )
-    ).rows[0] ?? {
-      working_hours_start: '09:00',
-      working_hours_end: '20:00',
-      working_days: [0, 1, 2, 3, 4],
-      timezone: 'Asia/Riyadh',
-    };
+    const rules = await loadRules(db);
     if (!withinWorkingHours(deps.now(), rules)) {
       throw new SendBlocked(
         'outside_working_hours',
