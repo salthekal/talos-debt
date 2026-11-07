@@ -2,7 +2,7 @@
   "name": "@talos/api",
   "version": "1.0.0",
   "scripts": {
-    "test": "DB_NAME=talos_test ../scripts/db-reset.sh > /dev/null && vitest run",
+    "test": "vitest run",
     "dev": "tsx watch src/server.ts",
     "start": "node dist/src/server.js",
     "build": "tsc -p tsconfig.json",

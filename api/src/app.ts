@@ -5,6 +5,8 @@ import type { Config } from './config.js';
 import { dashboardRoutes } from './routes/dashboard.js';
 import { messageRoutes } from './routes/messages.js';
 import { paymentRoutes } from './routes/payments.js';
+import { GeminiClient, type LlmClient } from './ai/llm.js';
+import { webhookRoutes } from './routes/webhooks.js';
 import { MetaCloudSender, type WhatsAppSender } from './whatsapp/client.js';
 
 export interface AppDeps {
@@ -12,6 +14,12 @@ export interface AppDeps {
   whatsapp?: WhatsAppSender;
   /** Clock, so tests can check working hours. */
   now?: () => Date;
+  /** Worker connection (talos_worker). Without it the WhatsApp webhook is not mounted. */
+  workerPool?: pg.Pool;
+  /** AI model; defaults to the configured provider. Tests pass a fake. */
+  llm?: LlmClient;
+  /** Process webhook events before answering Meta (tests only). */
+  processWebhooksInline?: boolean;
 }
 
 export function buildApp(config: Config, pool: pg.Pool, deps: AppDeps = {}): FastifyInstance {
@@ -23,7 +31,13 @@ export function buildApp(config: Config, pool: pg.Pool, deps: AppDeps = {}): Fas
   const whatsapp =
     deps.whatsapp ??
     (config.WHATSAPP_TOKEN ? new MetaCloudSender(config.WHATSAPP_TOKEN, config.WHATSAPP_API_VERSION) : undefined);
-  const outbound = { pool, config, sender: whatsapp, now: deps.now ?? (() => new Date()) };
+  const now = deps.now ?? (() => new Date());
+  const outbound = { pool, config, sender: whatsapp, now };
+  const llm =
+    deps.llm ??
+    (config.AI_PROVIDER === 'gemini' && config.AI_API_KEY
+      ? new GeminiClient(config.AI_API_KEY, config.AI_MODEL, config.AI_FREE_TIER)
+      : undefined);
 
   app.get('/health', async (_req, reply) => {
     try {
@@ -41,6 +55,12 @@ export function buildApp(config: Config, pool: pg.Pool, deps: AppDeps = {}): Fas
     paymentRoutes(api, pool);
     messageRoutes(api, outbound);
   });
+
+  // Meta's webhook: no user login; requests are checked by signature instead.
+  if (deps.workerPool) {
+    const inbound = { pool, workerPool: deps.workerPool, config, sender: whatsapp, llm, now };
+    app.register(async (hooks) => webhookRoutes(hooks, inbound, { processInline: deps.processWebhooksInline }));
+  }
 
   app.setErrorHandler((err, req, reply) => {
     req.log.error({ err }, 'request failed');

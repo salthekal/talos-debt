@@ -38,6 +38,9 @@ class FakeSender implements WhatsAppSender {
     this.sent.push(msg);
     return this.next;
   }
+  async sendText(): Promise<SendResult> {
+    return this.next;
+  }
 }
 
 let admin: pg.Pool;

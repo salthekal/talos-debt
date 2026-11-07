@@ -64,3 +64,21 @@ export async function withTenant<T>(
     db.release();
   }
 }
+
+/**
+ * The worker connection must be a member of talos_worker (it stores raw webhooks)
+ * and must itself have BYPASSRLS. PostgreSQL does not pass BYPASSRLS down through
+ * role membership, so a member without it silently sees no rows.
+ */
+export async function assertWorkerRole(pool: pg.Pool): Promise<void> {
+  const { rows } = await pool.query<{ ok: boolean }>(
+    `SELECT pg_has_role(current_user, 'talos_worker', 'MEMBER') AND r.rolbypassrls AND NOT r.rolsuper AS ok
+       FROM pg_roles r WHERE r.rolname = current_user`,
+  );
+  if (!rows[0]?.ok) {
+    throw new Error(
+      'WORKER_DATABASE_URL must use a member of talos_worker that has BYPASSRLS and is not a superuser. ' +
+        'Use talos_jobs (see dev/roles.sql).',
+    );
+  }
+}
