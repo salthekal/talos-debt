@@ -170,5 +170,25 @@ BEGIN
   RAISE NOTICE 'PASS 10: API role is limited correctly';
 END $$;
 
+-- ---------------------------------------------------------------------
+-- 11. Inbound WhatsApp messages open the 24-hour reply window
+-- ---------------------------------------------------------------------
+DO $$
+BEGIN
+  -- Fahad replied 1 day ago in the seed, so his window is closed.
+  ASSERT NOT app.whatsapp_window_open('44444444-4444-4444-8444-000000000003'),
+    'CHECK 11a FAILED: window should be closed after more than 24 hours';
+  INSERT INTO app.messages (client_id, debtor_id, debt_id, phone_id, channel, direction, body, status)
+  VALUES ('11111111-1111-4111-8111-111111111111', '33333333-3333-4333-8333-000000000002',
+          '66666666-6666-4666-8666-000000000002', '44444444-4444-4444-8444-000000000003',
+          'whatsapp', 'inbound', 'Check: new message', 'received');
+  ASSERT app.whatsapp_window_open('44444444-4444-4444-8444-000000000003'),
+    'CHECK 11b FAILED: window should open after a new inbound message';
+  -- Rahim replied 6 hours ago in the seed (filled from history).
+  ASSERT app.whatsapp_window_open('44444444-4444-4444-8444-000000000004'),
+    'CHECK 11c FAILED: window should be open for a reply 6 hours ago';
+  RAISE NOTICE 'PASS 11: inbound messages open the 24-hour window';
+END $$;
+
 ROLLBACK;
 \echo 'All database checks passed.'
