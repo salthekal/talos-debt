@@ -1,0 +1,34 @@
+name: Database checks
+
+# Runs on every pull request and push to main: builds the database from
+# the migrations, loads the fake seed data, and runs the safety checks.
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  db-checks:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install psql
+        run: sudo apt-get update -q && sudo apt-get install -y -q postgresql-client
+      - name: Build database and run checks
+        env:
+          ADMIN_DATABASE_URL: postgres://postgres:postgres@localhost:5432/postgres
+        run: ./scripts/db-reset.sh
