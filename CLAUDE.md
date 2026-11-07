@@ -71,7 +71,7 @@ Interface languages: Arabic (right to left) and English. Debtor message language
 
 ## Development order (current plan)
 
-1. Repository and dev database with the schema and fake seed data
+1. Repository and dev database with the schema and fake seed data (done: `docker compose up -d` then `./scripts/db-reset.sh`)
 2. Back end skeleton with the per-request client setting
 3. WhatsApp outbound template send (test number)
 4. WhatsApp inbound webhook, matched to the debtor

@@ -16,9 +16,35 @@ See `CLAUDE.md` for architecture, rules and the development plan.
 
 ## Getting started
 
-1. Copy `.env.example` to `.env` and fill in the values.
-2. Create a PostgreSQL 15+ database with the `vector` extension available.
-3. Run `db/migrations/0001_initial_schema.sql`.
+### Development database
+
+You need Docker and the `psql` command line tool.
+
+```bash
+docker compose up -d          # start PostgreSQL 16 with pgvector
+./scripts/db-reset.sh         # create the database, run migrations, load fake data, run checks
+```
+
+This gives you a database called `talos_dev` at
+`postgres://postgres:postgres@localhost:5432/talos_dev` with:
+
+- one fake client (a delivery company) and two users (owner and staff)
+- five fake debtors, each in a different situation: heading to legal, promised to pay,
+  receipt waiting for approval, disputing the amount, and partly paid
+- Talos default WhatsApp templates in Arabic and English
+
+Run `./scripts/db-reset.sh` again at any time to start fresh. It only works on local databases.
+
+### Safety checks
+
+`dev/checks.sql` proves the database rules hold: clients cannot see or write each other's data,
+payments need a reviewer, paid and disputed debts stop their reminders, every change is logged and
+the log cannot be edited, and legal cases need approval. The same checks run automatically on every
+pull request (see `.github/workflows/db-checks.yml`).
+
+### Settings
+
+Copy `.env.example` to `.env` and fill in the values. Never commit `.env`.
 
 ## Status
 
