@@ -42,6 +42,36 @@ payments need a reviewer, paid and disputed debts stop their reminders, every ch
 the log cannot be edited, and legal cases need approval. The same checks run automatically on every
 pull request (see `.github/workflows/db-checks.yml`).
 
+### Back end API
+
+```bash
+cd api
+cp .env.example .env          # local settings; never commit .env
+npm install
+npm run dev                   # starts on http://localhost:3000
+npm test                      # resets a separate talos_test database and runs the tests
+```
+
+During development, log in by sending two headers with every request (the demo staff user):
+
+```
+x-client-id: 11111111-1111-4111-8111-111111111111
+x-user-id:   22222222-2222-4222-8222-000000000002
+```
+
+| Method | Path | What it returns |
+|---|---|---|
+| GET | `/health` | Server and database status (no login) |
+| GET | `/api/me` | Logged-in user and client |
+| GET | `/api/dashboard/totals` | Main dashboard numbers |
+| GET | `/api/debts?status=&search=&limit=&offset=` | Debt list for the CRM |
+| GET | `/api/debtors/:id` | One debtor: phones, debts and full timeline |
+| GET | `/api/approvals` | Payments waiting for review and open disputes |
+| POST | `/api/payments/:id/approve` | Approve a payment (owner, admin, staff) |
+| POST | `/api/payments/:id/reject` | Reject a payment with `{ "reason": "..." }` |
+
+Money is returned as text (for example `"1280.50"`) so it is never rounded.
+
 ### Settings
 
 Copy `.env.example` to `.env` and fill in the values. Never commit `.env`.

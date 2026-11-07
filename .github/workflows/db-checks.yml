@@ -1,4 +1,4 @@
-name: Database checks
+name: Checks
 
 # Runs on every pull request and push to main: builds the database from
 # the migrations, loads the fake seed data, and runs the safety checks.
@@ -32,3 +32,38 @@ jobs:
         env:
           ADMIN_DATABASE_URL: postgres://postgres:postgres@localhost:5432/postgres
         run: ./scripts/db-reset.sh
+
+  api-tests:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+    defaults:
+      run:
+        working-directory: api
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: api/package-lock.json
+      - name: Install psql
+        run: sudo apt-get update -q && sudo apt-get install -y -q postgresql-client
+      - run: npm ci
+      - run: npm run typecheck
+      - name: Run API tests
+        env:
+          ADMIN_DATABASE_URL: postgres://postgres:postgres@localhost:5432/postgres
+        run: npm test

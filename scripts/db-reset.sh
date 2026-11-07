@@ -39,6 +39,9 @@ for f in "$ROOT"/db/migrations/*.sql; do
   psql "$DB_URL" -v ON_ERROR_STOP=1 -q -f "$f"
 done
 
+echo "Creating development login roles..."
+psql "$DB_URL" -v ON_ERROR_STOP=1 -q -f "$ROOT/dev/roles.sql"
+
 echo "Loading fake seed data..."
 psql "$DB_URL" -v ON_ERROR_STOP=1 -q -f "$ROOT/dev/seed.sql"
 
