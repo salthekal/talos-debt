@@ -88,18 +88,110 @@ Interface languages: Arabic (right to left) and English. Debtor message language
 - **Never commit real debtor or client data.** Development uses fake seed data only. Real data lives only in the Saudi-hosted production database.
 - This repository is public: keep business plans, pricing and client names out of it.
 
-## Development order (current plan)
+## Build plan and progress
 
-1. Repository and dev database with the schema and fake seed data (done: `docker compose up -d` then `./scripts/db-reset.sh`)
-2. Back end skeleton with the per-request client setting (done: `api/`, run `npm run dev`, tests with `npm test`)
-3. WhatsApp outbound template send (test number) (done: `api/src/whatsapp/`, `POST /api/debts/:id/send-reminder`, `npm run whatsapp:ping`)
-4. WhatsApp inbound webhook, matched to the debtor (done: `api/src/routes/webhooks.ts`)
-5. Agent reply grounded in the debtor's records, validated, sent and logged (done: `api/src/agent/`, `api/src/ai/llm.ts`)
-6. Dashboard: debtor list, debtor timeline, payment and dispute approval queue, totals
-7. Excel import with validation
-8. Scheduler for automatic reminders
-9. Receipt reading and promise capture
-10. Najiz filing pack export
+This is the full list of steps to build the product. Finished steps are ticked and crossed out, with where the work lives. Keep this list up to date in every pull request that finishes or adds a step, so whoever picks up next (Sal, Karam or Claude) knows where things stand.
+
+Owner: **S** = Sal (API, worker, web, AI), **K** = Karam (database, infrastructure, accounts), **S+K** = together.
+
+### Where things stand (last updated 7 November 2026)
+
+- Merged: the database, the back end API, WhatsApp reminders out, and the WhatsApp agent that reads replies and answers them.
+- Not tested with the real services yet: everything Meta and Gemini related is tested with fakes only. The first real run is step 1.9.
+- Nothing is hosted yet. There is no production database and no user login (only the development headers).
+- Open decision: should the agent reply outside working hours (`AGENT_REPLY_OUTSIDE_HOURS`)? Today the reply is held and staff are alerted.
+
+### Pick up here
+
+1. Pull `main`, then `docker compose up -d` and `./scripts/db-reset.sh` (fresh dev database with fake data).
+2. `cd api && npm install && npm test` (all tests must pass before you change anything).
+3. Choose the next unticked step for your area below, and work on a branch named `<you>/<step>`.
+4. Open a pull request into `main` (not into another feature branch), and tick the step here in the same pull request.
+
+### Phase 0: Foundations
+
+- [x] ~~0.1 Public GitHub repository, CLAUDE.md, README, `.env.example`, CI checks (S)~~ (`.github/workflows/db-checks.yml`)
+- [x] ~~0.2 Database schema: clients, users, debtors, debts, instruments, documents, messages, promises, payments, disputes, legal cases, rules, audit log, RLS, triggers (K)~~ (`db/migrations/0001_initial_schema.sql`)
+- [x] ~~0.3 Debtor phones remember the last message received, for the 24-hour window (S, reviewed by K)~~ (`db/migrations/0002_debtor_phones_last_inbound.sql`)
+- [x] ~~0.4 Local dev database with fake seed data, login roles and safety checks (S)~~ (`docker-compose.yml`, `scripts/db-reset.sh`, `dev/`)
+- [x] ~~0.5 Back end skeleton: per-request client setting, dev login, roles, dashboard reads, payment approve and reject (S)~~ (`api/src/`)
+- [x] ~~0.6 Meta business portfolio and domain verification for talosksa.com (S)~~
+- [ ] 0.7 Meta business verification: submitted, waiting for Meta (S)
+- [ ] 0.8 Create the production worker login role **with `BYPASSRLS`** (it is not inherited from `talos_worker`), and the API role, with strong passwords (K)
+- [ ] 0.9 Legal check with a Saudi lawyer: client authorization wording, debtor consent clause, filing on clients' behalf, whether any license is needed (S+K)
+
+### Phase 1: WhatsApp agent
+
+- [x] ~~1.1 Send reminder templates through the Meta Cloud API, with stop rules, working hours and the development redirect (S)~~ (`api/src/whatsapp/`, `POST /api/debts/:id/send-reminder`, `npm run whatsapp:ping`)
+- [x] ~~1.2 Webhook: Meta signature check, every event stored first, retries ignored, delivery and read status updates (S)~~ (`api/src/routes/webhooks.ts`)
+- [x] ~~1.3 Match an incoming message to the debtor and client by phone (S)~~ (`api/src/agent/inbound.ts`)
+- [x] ~~1.4 AI reply from the debtor's own records, behind a swappable AI interface (Gemini free tier in development) (S)~~ (`api/src/ai/llm.ts`, `api/src/agent/prompt.ts`)
+- [x] ~~1.5 Check every AI reply: amounts must come from the database, no threats, safe fallback reply and staff alert (S)~~ (`api/src/agent/decision.ts`)
+- [x] ~~1.6 Act on replies: promise to pay with a follow-up check, dispute (stops reminders), wrong number, opt-out, receipt alert (S)~~ (`api/src/agent/inbound.ts`)
+- [x] ~~1.7 Log every AI call in `ai.agent_runs` (S)~~
+- [x] ~~1.8 Tests with a fake AI and a fake WhatsApp sender, fresh database per test file (S)~~ (`api/test/`)
+- [ ] 1.9 First real end-to-end test: Gemini key, public tunnel, webhook set in Meta, reminder to Sal's phone and a reply back (S)
+- [ ] 1.10 Write the real reminder templates (Arabic, English, Urdu, Bengali, Hindi) and submit them to Meta for approval (S)
+- [ ] 1.11 Send held replies: replies held outside working hours go out when hours start, or staff send them from the dashboard (S)
+- [ ] 1.12 Retry job for webhook events that failed or were never processed (S)
+- [ ] 1.13 Receipts: download the image from Meta, store it securely, let the AI read amount, date and bank, create a payment `pending_approval` for staff (S, storage from K)
+- [ ] 1.14 Answer from the client's own documents: split documents into chunks, embeddings in `ai.document_chunks` (pgvector), search them in the prompt (S, index tuning by K)
+- [ ] 1.15 Staff can take over a conversation and reply by hand, using a template when the 24-hour window is closed (S)
+
+### Phase 2: Scheduler (`/worker`)
+
+- [ ] 2.1 Worker process that runs due tasks from `app.follow_up_tasks` safely (one task at a time, no double sends) (S)
+- [ ] 2.2 Automatic reminders following each client's `app.follow_up_rules` (interval, number of attempts, hours, days) (S)
+- [ ] 2.3 Promise checks: mark a promise kept or broken on its date and restart reminders when broken (S)
+- [ ] 2.4 After the last attempt with no reply, mark the debt ready for legal and alert the client (S)
+- [ ] 2.5 Daily summary notification for each client (S)
+
+### Phase 3: Getting data in
+
+- [ ] 3.1 Excel template and import with validation: phone format, duplicate IDs, missing amounts, clear error report per row (S)
+- [ ] 3.2 Add and edit debtors and debts by hand (S)
+- [ ] 3.3 Secure file storage for documents (contracts, promissory notes, IDs, receipts), encrypted, in Saudi Arabia (K)
+- [ ] 3.4 Upload documents per debtor and per debt (S)
+- [ ] 3.5 Classify each debt by its instrument and show how much is directly enforceable; flag paper promissory notes that will lose force (S)
+
+### Phase 4: Client dashboard and CRM (`/web`)
+
+- [ ] 4.1 React app shell, Arabic (right to left) and English (S)
+- [ ] 4.2 Real login for client staff, replacing the development headers (S+K)
+- [ ] 4.3 Main numbers: owed, recovered, promised, disputed, in legal, enforceable share (S)
+- [ ] 4.4 Debtor list with filters and search (S)
+- [ ] 4.5 Debtor page with full timeline: messages, promises, payments, disputes, documents (S)
+- [ ] 4.6 Approval queue: approve or reject payments, resolve disputes (S)
+- [ ] 4.7 Notifications: replies, payments to approve, disputes, legal-ready debts (S)
+- [ ] 4.8 Settings: follow-up rules, working hours, languages, templates, users and roles (S)
+- [ ] 4.9 Client sign-up: CR, establishment contract, owner details, IBAN, signed authorization (S)
+
+### Phase 5: Legal escalation
+
+- [ ] 5.1 Filing pack: PDF with debtor details, amount, instrument, Najiz request type and sub type, full contact history as proof, plus all documents (S)
+- [ ] 5.2 Client approval before a case moves past `ready` (database already enforces it) (S)
+- [ ] 5.3 Case status tracking, entered by hand at first (S)
+
+### Phase 6: Production
+
+- [ ] 6.1 Choose a Saudi cloud provider and region; separate development and production environments (K)
+- [ ] 6.2 Managed PostgreSQL with pgvector, backups and a tested restore (K)
+- [ ] 6.3 Secrets management (Meta token, app secret, AI key); never in the repository (K)
+- [ ] 6.4 Public HTTPS address for the API and the Meta webhook (K)
+- [ ] 6.5 Paid AI plan with data terms that allow real debtor data (the free tier is refused in production) (S+K)
+- [ ] 6.6 Real WhatsApp sender number, display name approved, payment method in Meta (K)
+- [ ] 6.7 Monitoring and alerts: failed sends, webhook errors, AI errors and cost (K)
+- [ ] 6.8 Deploy pipeline from `main` (K)
+- [ ] 6.9 Pilot with the first client: load real debts, measure money recovered, reply rate, dispute rate and staff time (S+K)
+
+### Later (after the first version)
+
+- [ ] L.1 Payment links that pay straight into the client's own bank account (S, gateway account by K)
+- [ ] L.2 SMS as a backup channel (S)
+- [ ] L.3 Voice agent with an Arabic voice provider (S)
+- [ ] L.4 One WhatsApp number per client through Meta Tech Provider sign-up (K)
+- [ ] L.5 Help clients issue promissory notes on Nafith at hiring (S+K)
+- [ ] L.6 Sector playbooks, starting with construction (S)
 
 ## Conventions
 
