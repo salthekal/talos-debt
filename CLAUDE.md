@@ -34,7 +34,19 @@ Interface languages: Arabic (right to left) and English. Debtor message language
 - WhatsApp: Meta WhatsApp Cloud API (webhooks in, Graph API out)
 - AI: provider and model set by environment variables, behind one small interface so the provider can be swapped
 
-## Database rules (from `/db/migrations/0001_initial_schema.sql`)
+## Database rules (`/db/migrations`)
+
+The migrations, in order. Each one is applied once and never edited after it has run on a real database.
+
+| File | What it adds | Written by |
+|---|---|---|
+| `0001_initial_schema.sql` | The schema: tables, RLS, triggers, views, roles | Karam |
+| `0002_debtor_phones_last_inbound.sql` | `debtor_phones.last_inbound_at` and `app.whatsapp_window_open()` (24-hour rule) | Sal, reviewed by Karam |
+| `0003_worker_policies.sql` | A `worker_all` policy on every RLS table, so the worker sees all clients without `BYPASSRLS` | Sal, reviewed by Karam |
+| `0004_data_intake.sql` | `app.next_ref()` reference numbers, import reports, one record per instrument | Karam |
+| `0005_scheduler.sql` | On `follow_up_tasks`: `approved_by`/`approved_at`, `tries`, `last_error`, `finished_at`, and at most one open reminder and one open legal task per debt | Sal, **waiting for Karam's review** (PR #10) |
+
+Other files in `/db`: `db/roles/login_roles.sql` and `db/roles/check_login_roles.sql` (login roles for development and production, see "Setting up a new database"), written by Sal and reviewed by Karam.
 
 - Three schemas: `app` (business data), `ai` (document chunks, AI usage log), `audit` (append-only activity log).
 - Primary keys are UUIDs. Money is `numeric(12,2)` in SAR, never floats. Times are `timestamptz` (UTC stored, Asia/Riyadh shown).
@@ -54,6 +66,7 @@ Interface languages: Arabic (right to left) and English. Debtor message language
   - A new open dispute marks the debt `disputed` and cancels pending reminders.
   - Changes to key tables are written to `audit.activity_log` automatically. The log cannot be edited or deleted.
   - A payment cannot leave `pending_approval` without a reviewer. A legal case cannot move past `ready` without approval.
+  - A debt has at most one open (`pending` or `running`) `send_reminder` task and one open `mark_legal_ready` task (`follow_up_tasks_one_open`, 0005). Insert those with `ON CONFLICT ... DO NOTHING`; promise checks are not limited. `approved_by` and `approved_at` are set together or not at all.
 - Dashboard numbers come from the views `app.v_debt_overview` and `app.v_client_totals`.
 
 ## Back end conventions (`/api`)
@@ -129,7 +142,7 @@ Owner: **S** = Sal (API, worker, web, AI), **K** = Karam (database, infrastructu
 ### Where things stand (last updated 8 November 2026)
 
 - Merged: the database, the back end API, WhatsApp reminders out, and the WhatsApp agent that reads replies and answers them.
-- Phase 2 (the scheduler) is built: automatic reminders (or staff-approved ones), promise checks, the legal-ready step and a daily summary. Tested with a fake WhatsApp sender only.
+- Phase 2 (the scheduler) is built: automatic reminders (or staff-approved ones), promise checks, the legal-ready step and a daily summary. Tested with a fake WhatsApp sender only. Its migration `0005_scheduler.sql` is in Karam's area and waits for his review.
 - Phase 3 (getting data in) is built on the API side: manual entry, Excel import with a check report, document upload and the enforceability summary. The screens for them come in Phase 4. Files are stored locally in development; the Dammam bucket is set up with step 6.1 (3.3b).
 - Not tested with the real services yet: everything Meta and Gemini related is tested with fakes only. The first real run is step 1.9.
 - Nothing is hosted yet. There is no production database and no user login (only the development headers).
