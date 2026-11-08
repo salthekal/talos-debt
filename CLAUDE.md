@@ -8,7 +8,7 @@ Talos Debt Follow-up: a system that helps Saudi companies follow up with people 
 
 - A **WhatsApp agent** sends scheduled reminders, answers debtors' questions using only the client's own records, records promises to pay, and reads payment receipts.
 - A **client dashboard and CRM** shows every debtor, debt, message, payment and legal step, and lets client staff approve payments and handle disputes.
-- When a debtor does not respond, the system prepares a **filing pack** for an execution request on Najiz (Ministry of Justice). It never logs into Najiz itself; the client or its lawyer submits.
+- When a debtor does not respond, the system prepares a **filing pack** for an execution request on Najiz (Ministry of Justice) and, with the client's approval, signs in to Najiz for the client, submits it and follows its status (see "Najiz rules").
 
 Interface languages: Arabic (right to left) and English. Debtor message languages: Arabic, English, Urdu, Bengali, Hindi.
 
@@ -126,6 +126,17 @@ Other files in `/db`: `db/roles/login_roles.sql` and `db/roles/check_login_roles
 8. Log every AI call in `ai.agent_runs` (model, tokens, cost, structured output).
 9. Reply in the debtor's preferred language.
 
+## Najiz rules (must always hold)
+
+Decided by Sal on 9 November 2026, after asking a lawyer: Talos may sign in to Najiz for its clients, and no power of attorney is needed.
+
+1. **The client approves every sign-in** through Nafath on the owner's (or authorized person's) phone. The system never holds a Nafath or Najiz password.
+2. **The client approves every filing** before it is submitted (the database already blocks a case moving past `ready` without approval).
+3. **Nothing about the session is kept longer than needed.** Session data lives only for the sign-in it belongs to, encrypted, and is deleted when the task ends. It is never written to logs.
+4. **Deleting a client account deletes all its Najiz data for good:** session data, saved request numbers and status history.
+5. Every sign-in, filing and status check is written to `audit.activity_log` (who approved it, when, and the request number).
+6. If Najiz shows anything unexpected (a changed page, an error, a captcha), stop and tell the client's staff. Never guess.
+
 ## Data and secrets
 
 - **Never commit secrets.** Use `.env` (ignored by git); `.env.example` lists the variables.
@@ -147,7 +158,7 @@ Owner: **S** = Sal (API, worker, web, AI), **K** = Karam (database, infrastructu
 - Not tested with the real services yet: everything Meta and Gemini related is tested with fakes only. The first real run is step 1.9.
 - Nothing is hosted yet. There is no production database and no user login (only the development headers).
 - The database setup is ready for a managed database (no superuser needed): the migrations, then one script. It was tested on a simulated one; see "Setting up a new database".
-- Planned but not started: the design system and designs for every page (4.0), the website, subscriptions and billing (Phase 7), and the Najiz filing flow (5.4, waiting for Sal's screen recording and the lawyer check).
+- Planned but not started: the design system and designs for every page (4.0), the website, subscriptions and billing (Phase 7), and the Najiz filing flow (5.4, waiting for Sal's screen recording of the steps).
 - Open decision: should the agent reply outside working hours (`AGENT_REPLY_OUTSIDE_HOURS`)? Today the reply is held and staff are alerted.
 
 ### Pick up here
@@ -177,7 +188,7 @@ Run these in order, as the admin account the provider gives you (it does not nee
 - [x] ~~0.6 Meta business portfolio and domain verification for talosksa.com (S)~~
 - [ ] 0.7 Meta business verification: submitted, waiting for Meta (S)
 - [x] ~~0.8 Login roles for the API and the worker with strong passwords, working on managed databases (no superuser, no `BYPASSRLS`) (S, review by K)~~ (`db/roles/`, `db/migrations/0003_worker_policies.sql`, `scripts/create-login-roles.sh`)
-- [ ] 0.9 Legal check with a Saudi lawyer: client authorization wording, debtor consent clause, filing on clients' behalf, whether any license is needed (S+K)
+- [ ] 0.9 Legal check with a Saudi lawyer: client authorization wording, debtor consent clause, whether any license is needed (S+K). Answered: Talos may sign in to Najiz and file for its clients with no power of attorney (Sal, 9 November 2026). Keep the lawyer's answer in writing
 - [x] ~~0.10 Remove `BYPASSRLS` from `talos_worker` in `0001`, so the migrations run on a managed database with no workaround (approved by K; safe because 0001 had never been applied to a real database)~~ (`db/migrations/0001_initial_schema.sql`)
 
 ### Phase 1: WhatsApp agent
@@ -239,8 +250,8 @@ Design comes first: every page is designed and approved by Sal before it is buil
 - [ ] 5.1 Filing pack: PDF with debtor details, amount, instrument, Najiz request type and sub type, full contact history as proof, plus all documents (S)
 - [ ] 5.2 Client approval before a case moves past `ready` (database already enforces it) (S)
 - [ ] 5.3 Case status tracking, entered by hand at first (S)
-- [ ] 5.4 Najiz filing flow: map every step from signing in with the client's approval (Nafath) to the page that shows the uploaded request and its number. **Waiting for Sal's screen recording and the lawyer's answer (0.9).** Today's rule stays until then: the system prepares the pack and the client or its lawyer submits (S)
-- [ ] 5.5 Najiz status checks: read the status of submitted requests and tell the client in plain words what it means and what comes next. Same dependency as 5.4 (S)
+- [ ] 5.4 Najiz filing flow: every step from signing in with the client's approval (Nafath) to the page that shows the uploaded request and its number, following the Najiz rules above. **Waiting for Sal's screen recording of the steps** (S)
+- [ ] 5.5 Najiz status checks: read the status of submitted requests and tell the client in plain words what it means and what comes next. If each check needs a new Nafath approval, group checks so the client approves once per round (S)
 
 ### Phase 6: Production
 
