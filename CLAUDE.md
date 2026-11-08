@@ -147,6 +147,7 @@ Owner: **S** = Sal (API, worker, web, AI), **K** = Karam (database, infrastructu
 - Not tested with the real services yet: everything Meta and Gemini related is tested with fakes only. The first real run is step 1.9.
 - Nothing is hosted yet. There is no production database and no user login (only the development headers).
 - The database setup is ready for a managed database (no superuser needed): the migrations, then one script. It was tested on a simulated one; see "Setting up a new database".
+- Planned but not started: the design system and designs for every page (4.0), the website, subscriptions and billing (Phase 7), and the Najiz filing flow (5.4, waiting for Sal's screen recording and the lawyer check).
 - Open decision: should the agent reply outside working hours (`AGENT_REPLY_OUTSIDE_HOURS`)? Today the reply is held and staff are alerted.
 
 ### Pick up here
@@ -217,6 +218,12 @@ Run these in order, as the admin account the provider gives you (it does not nee
 
 ### Phase 4: Client dashboard and CRM (`/web`)
 
+Design comes first: every page is designed and approved by Sal before it is built (4.0). The bar is a product that looks and feels premium, is easy for busy staff, and works equally well in Arabic (right to left) and English, on phone and desktop.
+
+- [ ] 4.0a Design system: brand colours, Arabic and English fonts, spacing, components (tables, forms, status badges, charts), light and dark, right to left from the start (S)
+- [ ] 4.0b Designs for every page (dashboard, debtor list, debtor page, approvals, notifications, settings, import, onboarding) approved before building; clickable prototype for the main flows (S)
+- [ ] 4.0c Usability check with two or three people from a pilot client before launch (S)
+
 - [ ] 4.1 React app shell, Arabic (right to left) and English (S)
 - [ ] 4.2 Real login for client staff, replacing the development headers (S+K)
 - [ ] 4.3 Main numbers: owed, recovered, promised, disputed, in legal, enforceable share (S)
@@ -225,13 +232,15 @@ Run these in order, as the admin account the provider gives you (it does not nee
 - [ ] 4.6 Approval queue: approve or reject payments, resolve disputes (S)
 - [ ] 4.7 Notifications: replies, payments to approve, disputes, legal-ready debts (S)
 - [ ] 4.8 Settings: follow-up rules, working hours, languages, templates, users and roles (S)
-- [ ] 4.9 Client sign-up: CR, establishment contract, owner details, IBAN, signed authorization (S)
+- [ ] 4.9 Client sign-up and onboarding: see 7.3 (S)
 
 ### Phase 5: Legal escalation
 
 - [ ] 5.1 Filing pack: PDF with debtor details, amount, instrument, Najiz request type and sub type, full contact history as proof, plus all documents (S)
 - [ ] 5.2 Client approval before a case moves past `ready` (database already enforces it) (S)
 - [ ] 5.3 Case status tracking, entered by hand at first (S)
+- [ ] 5.4 Najiz filing flow: map every step from signing in with the client's approval (Nafath) to the page that shows the uploaded request and its number. **Waiting for Sal's screen recording and the lawyer's answer (0.9).** Today's rule stays until then: the system prepares the pack and the client or its lawyer submits (S)
+- [ ] 5.5 Najiz status checks: read the status of submitted requests and tell the client in plain words what it means and what comes next. Same dependency as 5.4 (S)
 
 ### Phase 6: Production
 
@@ -244,6 +253,19 @@ Run these in order, as the admin account the provider gives you (it does not nee
 - [ ] 6.7 Monitoring and alerts: failed sends, webhook errors, AI errors and cost (K)
 - [ ] 6.8 Deploy pipeline from `main` (K)
 - [ ] 6.9 Pilot with the first client: load real debts, measure money recovered, reply rate, dispute rate and staff time (S+K)
+
+### Phase 7: Website, subscriptions and billing
+
+Prices and plan details are kept out of this public repository: they are loaded from settings or the payment provider.
+
+- [ ] 7.1 Landing page in Arabic and English, designed to the same bar as the product: fast (static or server-rendered), clear offer, how it works, trust (data in Saudi Arabia, legal process), questions and answers, call to action (S)
+- [ ] 7.2 Search engines: page titles and descriptions, Arabic and English versions linked to each other (`hreflang`), sitemap, structured data (company, software product, questions and answers), fast loading on phones (S)
+- [ ] 7.3 AI assistants: plain factual pages AI assistants can read and quote, an `llms.txt` file, answers to common questions written as full sentences, no key content hidden behind scripts (S)
+- [ ] 7.4 Pricing and subscription page: plans by number of debtors, monthly or yearly, free trial (S)
+- [ ] 7.5 Self sign-up and onboarding: company details, commercial registration and establishment contract upload, owner details, IBAN, signed authorization, follow-up rules, first Excel import, with a progress bar (S)
+- [ ] 7.6 Subscription payments: payment gateway account (mada, Visa and Mastercard, Apple Pay), recurring billing, trial ending, failed payment emails (S, gateway account by K)
+- [ ] 7.7 Billing in the dashboard: current plan, change plan, card, invoices; plan limits enforced (number of active debtors) (S)
+- [ ] 7.8 Talos's own invoices to clients meet ZATCA e-invoicing rules (S+K)
 
 ### Later (after the first version)
 
