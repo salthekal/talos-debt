@@ -7,7 +7,9 @@
     "start": "node dist/src/server.js",
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "whatsapp:ping": "tsx scripts/whatsapp-ping.ts"
+    "whatsapp:ping": "tsx scripts/whatsapp-ping.ts",
+    "scheduler": "tsx src/scheduler/main.ts",
+    "scheduler:start": "node dist/src/scheduler/main.js"
   },
   "private": "true",
   "type": "module",

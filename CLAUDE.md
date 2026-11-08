@@ -19,7 +19,7 @@ Interface languages: Arabic (right to left) and English. Debtor message language
 | `/db` | PostgreSQL schema and migrations | Karam |
 | `/api` | Back end API and WhatsApp webhook | Sal |
 | `/api/src/intake`, `/api/src/import`, `/api/src/storage` and their routes (`debtors`, `imports`, `documents`, `enforceability`) | Getting data in (Phase 3): manual entry, Excel import, file storage, enforceability | Karam (agreed with Sal) |
-| `/worker` | Scheduler that sends reminders and processes webhooks | Sal |
+| `/api/src/scheduler` | Scheduler that sends reminders, checks promises and marks debts ready for legal (runs as its own process: `npm run scheduler`). It lives in `/api` to share its database, WhatsApp and stop-rule code | Sal |
 | `/web` | Client dashboard and CRM (React) | Sal |
 | `/docs` | Schema diagram and documentation | Both |
 
@@ -74,6 +74,20 @@ Interface languages: Arabic (right to left) and English. Debtor message language
 - The webhook (`/webhooks/whatsapp`) checks Meta's signature with `WHATSAPP_APP_SECRET` and uses the worker connection only to find the sender and store raw events; everything else runs inside `withTenant` with `actor_type = 'ai'`.
 - Each test file starts from a freshly reset `talos_test` database (`api/test/setup.ts`).
 
+### Scheduler (Phase 2)
+
+- **A separate process:** `npm run scheduler` (keeps running) or `npm run scheduler -- --once` (one round). It needs both `DATABASE_URL` (`talos_api`) and `WORKER_DATABASE_URL` (`talos_jobs`). Several copies can run at once.
+- **The worker connection only finds and claims work** across clients (`claimTasks`, `recoverStaleTasks`, the planner's search). Everything else runs inside `withTenant` with `actor_type = 'system'`, so RLS and the audit log apply.
+- **Never two reminders for one debt.** Tasks are claimed in one statement with `FOR UPDATE SKIP LOCKED`; the database allows one open (`pending` or `running`) reminder and one open legal task per debt (`follow_up_tasks_one_open`, migration 0005). Insert tasks with `ON CONFLICT ... DO NOTHING` (see `planNext`). Reminders go through `sendReminder`, never straight to Meta.
+- **A task stopped half way** (crash, restart) is recovered after `SCHEDULER_STALE_MINUTES`: put back if nothing was saved; closed if its reminder was already saved; a reminder left `queued` is never resent (staff are told to check).
+- **Stop rules are checked again when a task runs**, not only when it is planned: paid, promised or any open promise, disputed, paused (`paused_until`), legal, closed, debtor not active, no attempts left. A reminder sent by hand, or a reply from the debtor, moves the next one a full interval later. Outside working hours a task waits for the next working time (client time zone, `api/src/scheduler/time.ts`).
+- **`auto_send = false`** (the default): reminders are planned but wait for staff (`GET /api/reminders/waiting`, `POST /api/reminders/approve`). Stop rules still apply at sending.
+- **Templates:** first reminder, then follow-up, then `final_notice` for the last one (follow-up if there is no final notice template).
+- **Promises:** every open promise gets a `promise_check` at 10:00 client time on the day after `promise_grace_days`. Kept, partly kept or broken is decided in SQL from approved payments made after the promise (money never becomes a JavaScript number). A receipt waiting for approval delays the check by a day. A new promise cancels older open ones.
+- **Legal:** after `max_attempts` reminders and one more interval with no reply, the debt becomes `legal_ready` and the client is told. A reply after the last reminder goes to a person instead, and is not tried again until there is new contact.
+- **Failures:** a temporary Meta error is retried (15, then 30 minutes, 3 tries in total); other failures fail the task and tell staff, and the debt is not planned again for a day.
+- **Times the scheduler writes come from its own clock** (`deps.now`), so its later comparisons use the same clock. Tests use a fixed clock.
+
 ### Getting data in (Phase 3)
 
 - **One set of rules for every value that comes in.** `api/src/intake/normalize.ts` (phones, ID numbers, amounts, dates, list values in English or Arabic) and `api/src/intake/records.ts` (a whole debtor, debt or instrument) are used by both manual entry and the Excel import. Change a rule there, never in a route, so both stay the same.
@@ -115,6 +129,7 @@ Owner: **S** = Sal (API, worker, web, AI), **K** = Karam (database, infrastructu
 ### Where things stand (last updated 8 November 2026)
 
 - Merged: the database, the back end API, WhatsApp reminders out, and the WhatsApp agent that reads replies and answers them.
+- Phase 2 (the scheduler) is built: automatic reminders (or staff-approved ones), promise checks, the legal-ready step and a daily summary. Tested with a fake WhatsApp sender only.
 - Phase 3 (getting data in) is built on the API side: manual entry, Excel import with a check report, document upload and the enforceability summary. The screens for them come in Phase 4. Files are stored locally in development; the Dammam bucket is set up with step 6.1 (3.3b).
 - Not tested with the real services yet: everything Meta and Gemini related is tested with fakes only. The first real run is step 1.9.
 - Nothing is hosted yet. There is no production database and no user login (only the development headers).
@@ -169,13 +184,14 @@ Run these in order, as the admin account the provider gives you (it does not nee
 - [ ] 1.14 Answer from the client's own documents: split documents into chunks, embeddings in `ai.document_chunks` (pgvector), search them in the prompt (S, index tuning by K)
 - [ ] 1.15 Staff can take over a conversation and reply by hand, using a template when the 24-hour window is closed (S)
 
-### Phase 2: Scheduler (`/worker`)
+### Phase 2: Scheduler (`api/src/scheduler`)
 
-- [ ] 2.1 Worker process that runs due tasks from `app.follow_up_tasks` safely (one task at a time, no double sends) (S)
-- [ ] 2.2 Automatic reminders following each client's `app.follow_up_rules` (interval, number of attempts, hours, days) (S)
-- [ ] 2.3 Promise checks: mark a promise kept or broken on its date and restart reminders when broken (S)
-- [ ] 2.4 After the last attempt with no reply, mark the debt ready for legal and alert the client (S)
-- [ ] 2.5 Daily summary notification for each client (S)
+- [x] ~~2.1 Worker process that runs due tasks from `app.follow_up_tasks` safely (one task at a time, no double sends) (S)~~ (`api/src/scheduler/`, `npm run scheduler`, migration 0005)
+- [x] ~~2.2 Automatic reminders following each client's `app.follow_up_rules` (interval, number of attempts, hours, days), with staff approval when `auto_send` is off (S)~~ (`api/src/scheduler/planner.ts`, `tasks.ts`, `api/src/routes/reminders.ts`)
+- [x] ~~2.3 Promise checks: mark a promise kept or broken on its date and restart reminders when broken (S)~~ (`api/src/scheduler/tasks.ts`)
+- [x] ~~2.4 After the last attempt with no reply, mark the debt ready for legal and alert the client (S)~~ (`api/src/scheduler/tasks.ts`)
+- [x] ~~2.5 Daily summary notification for each client (S)~~ (`api/src/scheduler/summary.ts`)
+- [ ] 2.6 Run the scheduler in production next to the API, as its own process (K, with 6.8)
 
 ### Phase 3: Getting data in
 

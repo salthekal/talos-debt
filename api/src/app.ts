@@ -12,6 +12,7 @@ import { UPLOAD_LIMITS } from './routes/upload.js';
 import { LocalDiskStorage, type FileStorage } from './storage/storage.js';
 import { messageRoutes } from './routes/messages.js';
 import { paymentRoutes } from './routes/payments.js';
+import { reminderRoutes } from './routes/reminders.js';
 import { GeminiClient, type LlmClient } from './ai/llm.js';
 import { webhookRoutes } from './routes/webhooks.js';
 import { MetaCloudSender, type WhatsAppSender } from './whatsapp/client.js';
@@ -71,6 +72,7 @@ export function buildApp(config: Config, pool: pg.Pool, deps: AppDeps = {}): Fas
     dashboardRoutes(api, pool);
     paymentRoutes(api, pool);
     messageRoutes(api, outbound);
+    reminderRoutes(api, pool);
     debtorRoutes(api, pool);
     importRoutes(api, files);
     documentRoutes(api, files);

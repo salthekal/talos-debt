@@ -236,6 +236,8 @@ export async function handleInbound(deps: InboundDeps, msg: InboundMessage): Pro
           ])).rows[0]?.ok
             ? decision.promise_amount
             : null;
+        // A new promise replaces any older one still open for this debt.
+        await db.query(`UPDATE app.promises SET status = 'cancelled' WHERE debt_id = $1 AND status = 'pending'`, [debt.id]);
         await db.query(
           `INSERT INTO app.promises (client_id, debt_id, promised_amount, promised_date, source_message_id)
            VALUES (app.current_client_id(), $1, $2, $3, $4)`,
