@@ -1,12 +1,11 @@
 #!/usr/bin/env bash
 # Recreate the development database from scratch:
 #   1. drop and create the database
-#   2. create the group roles (db/roles/group_roles.sql)
-#   3. run every migration in db/migrations in order
-#   4. create the login roles with development passwords (db/roles/login_roles.sql)
+#   2. run every migration in db/migrations in order
+#   3. create the login roles with development passwords (db/roles/login_roles.sql)
 #      and check them (db/roles/check_login_roles.sql)
-#   5. load the fake seed data (dev/seed.sql)
-#   6. run the safety checks (dev/checks.sql)
+#   4. load the fake seed data (dev/seed.sql)
+#   5. run the safety checks (dev/checks.sql)
 #
 # Usage:
 #   ./scripts/db-reset.sh
@@ -36,8 +35,12 @@ echo "Resetting database '$DB_NAME'..."
 psql "$ADMIN_URL" -v ON_ERROR_STOP=1 -q -c "DROP DATABASE IF EXISTS \"$DB_NAME\" WITH (FORCE)"
 psql "$ADMIN_URL" -v ON_ERROR_STOP=1 -q -c "CREATE DATABASE \"$DB_NAME\""
 
-echo "Creating group roles (before the migrations, as on a managed database)..."
-psql "$DB_URL" -v ON_ERROR_STOP=1 -q -f "$ROOT/db/roles/group_roles.sql"
+# Roles belong to the whole server. Older development servers created talos_worker
+# with BYPASSRLS; remove it so development matches production.
+psql "$DB_URL" -v ON_ERROR_STOP=1 -q -c "DO \$\$ BEGIN
+  IF (SELECT rolbypassrls FROM pg_roles WHERE rolname = 'talos_worker') THEN
+    ALTER ROLE talos_worker NOBYPASSRLS;
+  END IF; END \$\$"
 
 echo "Running migrations..."
 for f in "$ROOT"/db/migrations/*.sql; do

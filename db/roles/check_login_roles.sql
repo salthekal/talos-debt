@@ -16,6 +16,11 @@ BEGIN
              AND NOT rolcreatedb AND NOT rolreplication) = 2,
     'ROLE CHECK 1 FAILED: talos_api and talos_jobs must log in with no superuser, BYPASSRLS, CREATEROLE, CREATEDB or REPLICATION';
 
+  -- 1b. The group roles have no special attributes either.
+  ASSERT (SELECT count(*) FROM pg_roles
+           WHERE rolname IN ('talos_app', 'talos_worker') AND NOT rolsuper AND NOT rolbypassrls) = 2,
+    'ROLE CHECK 1b FAILED: talos_app and talos_worker must exist with no superuser or BYPASSRLS';
+
   -- 2. Each role is in exactly the right group.
   ASSERT pg_has_role('talos_api', 'talos_app', 'MEMBER') AND NOT pg_has_role('talos_api', 'talos_worker', 'MEMBER'),
     'ROLE CHECK 2a FAILED: talos_api must be in talos_app and not in talos_worker';
