@@ -18,6 +18,7 @@ Interface languages: Arabic (right to left) and English. Debtor message language
 |---|---|---|
 | `/db` | PostgreSQL schema and migrations | Karam |
 | `/api` | Back end API and WhatsApp webhook | Sal |
+| `/api/src/intake`, `/api/src/import`, `/api/src/storage` and their routes (`debtors`, `imports`, `documents`, `enforceability`) | Getting data in (Phase 3): manual entry, Excel import, file storage, enforceability | Karam (agreed with Sal) |
 | `/worker` | Scheduler that sends reminders and processes webhooks | Sal |
 | `/web` | Client dashboard and CRM (React) | Sal |
 | `/docs` | Schema diagram and documentation | Both |
@@ -73,6 +74,19 @@ Interface languages: Arabic (right to left) and English. Debtor message language
 - The webhook (`/webhooks/whatsapp`) checks Meta's signature with `WHATSAPP_APP_SECRET` and uses the worker connection only to find the sender and store raw events; everything else runs inside `withTenant` with `actor_type = 'ai'`.
 - Each test file starts from a freshly reset `talos_test` database (`api/test/setup.ts`).
 
+### Getting data in (Phase 3)
+
+- **One set of rules for every value that comes in.** `api/src/intake/normalize.ts` (phones, ID numbers, amounts, dates, list values in English or Arabic) and `api/src/intake/records.ts` (a whole debtor, debt or instrument) are used by both manual entry and the Excel import. Change a rule there, never in a route, so both stay the same.
+- Errors stop a save and come back as `errors: [{ field, message }]`. Warnings never block (for example a wrong check digit in an ID number) and come back with the saved record.
+- Phones are stored as `+E.164`. Saudi numbers may be typed as 05XXXXXXXX or 5XXXXXXXX (Excel drops the 0). Dates are Gregorian, day before month; Hijri dates are refused with a message.
+- Reference numbers come from `app.next_ref('debtor' | 'debt')` (migration 0004): `D-000123`, `DBT-2026-0042`, per client, never repeated. A reference typed by the client is kept.
+- **Several debts per debtor, each with its own instrument.** Instruments belong to the debtor; debts point to one. The same type and reference number (spaces and letter case ignored) is one instrument, shared by its debts (`instruments_one_per_reference`). Reuse it with `pickInstrument` instead of inserting a copy.
+- New records are written with the bulk functions in `api/src/intake/write.ts` (one statement for a whole list, ids made in code).
+- **Excel import:** one row per debt; rows with the same ID number are one debtor. Upload gives a check report and stores the parsed rows; nothing else is saved. Confirm checks the rows again against the current data and saves everything in one transaction, or nothing. Debtors already stored keep their details: only new debts and phones are added. Parsed rows are deleted from `app.imports` once the import is confirmed or cancelled. Limits: 5 MB, 5,000 rows.
+- **Files:** go through `FileStorage` (`api/src/storage/storage.ts`), never straight to disk or a bucket. Store the bytes first (`storeFile`, outside the transaction), then the row (`insertDocumentRow`, inside it), and remove the file if the row fails. The file type comes from the file's first bytes (`detectFileType`), never from its name. Production uses the Dammam bucket (`docs/file-storage.md`); `STORAGE_DRIVER=local` is refused there.
+- With `@fastify/multipart`, options passed to `req.file()` replace all the plugin's limits, so always pass the full `UPLOAD_LIMITS` (see `readUpload`).
+- Enforceability (`/api/enforceability`): paper promissory notes and bills of exchange (`has_time_limit`) lose direct force one year after the new Enforcement Law starts. Set `ENFORCEMENT_LAW_START_DATE` once the date is published; until then they are flagged with no deadline.
+
 ## WhatsApp agent rules (must always hold)
 
 1. **The AI never decides an amount.** Amounts, dates and references come from the database and are passed into the prompt. Validate every AI reply: any amount it mentions must match the record.
@@ -89,6 +103,7 @@ Interface languages: Arabic (right to left) and English. Debtor message language
 
 - **Never commit secrets.** Use `.env` (ignored by git); `.env.example` lists the variables.
 - **Never commit real debtor or client data.** Development uses fake seed data only. Real data lives only in the Saudi-hosted production database.
+- Uploaded files are personal data too: only in the private Dammam bucket in production. Local development files go to `api/.data/` (ignored by git); never commit them.
 - This repository is public: keep business plans, pricing and client names out of it.
 
 ## Build plan and progress
@@ -100,6 +115,7 @@ Owner: **S** = Sal (API, worker, web, AI), **K** = Karam (database, infrastructu
 ### Where things stand (last updated 8 November 2026)
 
 - Merged: the database, the back end API, WhatsApp reminders out, and the WhatsApp agent that reads replies and answers them.
+- Phase 3 (getting data in) is built on the API side: manual entry, Excel import with a check report, document upload and the enforceability summary. The screens for them come in Phase 4. Files are stored locally in development; the Dammam bucket is set up with step 6.1 (3.3b).
 - Not tested with the real services yet: everything Meta and Gemini related is tested with fakes only. The first real run is step 1.9.
 - Nothing is hosted yet. There is no production database and no user login (only the development headers).
 - The database setup is ready for a managed database (no superuser needed): the migrations, then one script. It was tested on a simulated one; see "Setting up a new database".
@@ -163,11 +179,12 @@ Run these in order, as the admin account the provider gives you (it does not nee
 
 ### Phase 3: Getting data in
 
-- [ ] 3.1 Excel template and import with validation: phone format, duplicate IDs, missing amounts, clear error report per row (S)
-- [ ] 3.2 Add and edit debtors and debts by hand (S)
-- [ ] 3.3 Secure file storage for documents (contracts, promissory notes, IDs, receipts), encrypted, in Saudi Arabia (K)
-- [ ] 3.4 Upload documents per debtor and per debt (S)
-- [ ] 3.5 Classify each debt by its instrument and show how much is directly enforceable; flag paper promissory notes that will lose force (S)
+- [x] ~~3.1 Excel template and import with validation: phone format, duplicate IDs, missing amounts, clear error report per row (K)~~ (`api/src/import/`, `api/src/routes/imports.ts`, `/api/imports`)
+- [x] ~~3.2 Add and edit debtors and debts by hand (K)~~ (`api/src/intake/`, `api/src/routes/debtors.ts`, migration 0004)
+- [x] ~~3.3 Secure file storage for documents, encrypted, in Saudi Arabia: code (K)~~ (`api/src/storage/`, `docs/file-storage.md`)
+- [ ] 3.3b Create the Dammam bucket and service account once the Google Cloud account exists (K, with 6.1)
+- [x] ~~3.4 Upload documents per debtor and per debt (K)~~ (`api/src/routes/documents.ts`, `/api/documents`)
+- [x] ~~3.5 Classify each debt by its instrument and show how much is directly enforceable; flag paper promissory notes that will lose force (K)~~ (`api/src/routes/enforceability.ts`, `/api/enforceability`)
 
 ### Phase 4: Client dashboard and CRM (`/web`)
 
