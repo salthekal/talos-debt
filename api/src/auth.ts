@@ -51,6 +51,9 @@ export function devAuth(pool: pg.Pool) {
 /** Roles allowed to approve or reject payments and resolve disputes. */
 export const REVIEWER_ROLES: readonly Role[] = ['owner', 'admin', 'staff'];
 
+/** Roles allowed to add and change debtors, debts and documents. Viewers only read. */
+export const EDITOR_ROLES: readonly Role[] = ['owner', 'admin', 'staff'];
+
 export function requireRole(allowed: readonly Role[]) {
   return async function check(req: FastifyRequest, reply: FastifyReply) {
     if (!req.user || !allowed.includes(req.user.role)) {
