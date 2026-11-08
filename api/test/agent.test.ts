@@ -10,7 +10,7 @@ import { GeminiClient, type LlmClient, type LlmRequest, type LlmResponse } from 
 import { buildApp } from '../src/app.js';
 import { canonicalAmount, checkReply, normalizeDigits, parseDecision } from '../src/agent/decision.js';
 import { loadConfig } from '../src/config.js';
-import { assertWorkerRole, createPool } from '../src/db.js';
+import { assertRlsEnforced, assertWorkerRole, createPool } from '../src/db.js';
 import type { SendResult, TextMessage, WhatsAppSender } from '../src/whatsapp/client.js';
 
 const API_URL = process.env.TEST_DATABASE_URL ?? 'postgres://talos_api:talos_api_dev@localhost:5432/talos_test';
@@ -214,6 +214,30 @@ describe('configuration', () => {
   it('the worker connection is a talos_worker member', async () => {
     await expect(assertWorkerRole(worker)).resolves.toBeUndefined();
     await expect(assertWorkerRole(pool)).rejects.toThrow();
+  });
+
+  it('the worker sees every client through policies, without BYPASSRLS', async () => {
+    const role = await worker.query(`SELECT rolbypassrls FROM pg_roles WHERE rolname = current_user`);
+    expect(role.rows[0].rolbypassrls).toBe(false);
+    const all = await admin.query(`SELECT count(*)::int AS n FROM app.debtors`);
+    const seen = await worker.query(`SELECT count(*)::int AS n FROM app.debtors`);
+    expect(seen.rows[0].n).toBe(all.rows[0].n);
+  });
+
+  it('the API refuses an account that is also in the worker group', async () => {
+    await admin.query(`DROP ROLE IF EXISTS talos_test_both`);
+    await admin.query(`CREATE ROLE talos_test_both LOGIN PASSWORD 'both_dev' IN ROLE talos_app, talos_worker`);
+    const url = new URL(API_URL);
+    url.username = 'talos_test_both';
+    url.password = 'both_dev';
+    const both = createPool(url.toString());
+    try {
+      await expect(assertRlsEnforced(both)).rejects.toThrow(/not of talos_worker/);
+      await expect(assertRlsEnforced(pool)).resolves.toBeUndefined();
+    } finally {
+      await both.end();
+      await admin.query(`DROP ROLE talos_test_both`);
+    }
   });
 });
 
@@ -520,8 +544,9 @@ describe('a phone shared by two clients', () => {
     );
     await admin.query(
       `INSERT INTO app.messages (client_id, debtor_id, phone_id, channel, direction, body, status, created_at)
-       VALUES ($1, $2, $3, 'whatsapp', 'outbound', 'Reminder from the other client', 'sent', $4)`,
-      // Later than every reply the earlier tests saved at the fixed test time.
+       VALUES ($1, $2, $3, 'whatsapp', 'outbound', 'Reminder from the other client', 'sent',
+               greatest(now(), $4::timestamptz) + interval '1 hour')`,
+      // Later than every message the earlier tests saved, whatever today's date is.
       [other, debtor.rows[0]!.id, phone.rows[0]!.id, new Date(SUNDAY_10AM.getTime() + 3600_000)],
     );
     const llm = new FakeLlm();
