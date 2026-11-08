@@ -148,6 +148,31 @@ To try it in development:
 3. Send a reminder (above), then reply from your phone. In development, messages from
    `WHATSAPP_DEV_REDIRECT_TO` are treated as coming from the last debtor you messaged.
 
+### Scheduler (automatic reminders)
+
+The scheduler is a separate process. It plans and sends reminders, checks promises to
+pay, marks debts ready for legal, and writes a daily summary for each client.
+
+```bash
+cd api
+npm run scheduler -- --once   # one round, then stop (good for trying it)
+npm run scheduler             # keeps running, every SCHEDULER_POLL_SECONDS
+```
+
+It needs `DATABASE_URL` and `WORKER_DATABASE_URL`. Without WhatsApp settings it still
+plans and checks promises, but reminders wait. The demo client has `auto_send` off,
+so reminders also wait for a staff member:
+
+| Method | Path | What it does |
+|---|---|---|
+| GET | `/api/reminders/waiting` | Reminders due within a day that wait for approval |
+| POST | `/api/reminders/approve` | `{ "task_ids": [...] }` or `{ "all": true }` (owner, admin, staff) |
+| GET | `/api/debts/:id/tasks` | What is planned for a debt and what happened before |
+| POST | `/api/tasks/:id/cancel` | Cancel a planned task with `{ "reason": "..." }` (owner, admin, staff) |
+
+In production, run `npm run build` and then `node dist/src/scheduler/main.js` as its own
+service next to the API (it stops cleanly on `SIGTERM`).
+
 ### Setting up a real database
 
 `./scripts/db-reset.sh` is for development only. For production or staging, follow

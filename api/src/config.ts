@@ -49,6 +49,18 @@ const schema = z.object({
     .default('false')
     .transform((v) => v === 'true'),
 
+  // Scheduler (Phase 2, `npm run scheduler`).
+  SCHEDULER_POLL_SECONDS: z.coerce.number().int().min(5).max(3600).default(30),
+  SCHEDULER_BATCH_SIZE: z.coerce.number().int().min(1).max(500).default(20),
+  SCHEDULER_PLAN_EVERY_SECONDS: z.coerce.number().int().min(10).max(86400).default(300),
+  // A task still 'running' after this long was stopped half way and is recovered.
+  SCHEDULER_STALE_MINUTES: z.coerce.number().int().min(2).max(1440).default(10),
+  // Daily summary for each client from this time (client's own time zone), on working days.
+  DAILY_SUMMARY_TIME: z
+    .string()
+    .regex(/^([01]\d|2[0-3]):[0-5]\d$/, 'must be HH:MM')
+    .default('08:00'),
+
   // Uploaded files (step 3.3). 'local' is a folder on this machine: development
   // and tests only. Production uses a private Google Cloud Storage bucket in
   // the Dammam region (docs/file-storage.md).

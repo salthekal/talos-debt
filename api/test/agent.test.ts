@@ -367,6 +367,24 @@ describe('conversations', () => {
     expect(new Date(task.rows[0].due_at).toISOString()).toBe('2026-11-13T07:00:00.000Z');
   });
 
+  it('a new promise replaces the one still open', async () => {
+    const llm = new FakeLlm();
+    const app = await makeApp(llm, new FakeSender());
+    llm.next = decision({ intent: 'promise_to_pay', reply: 'Thank you.', debt_ref: 'DBT-2026-0002', promise_date: '2026-11-15' });
+    await post(app, messagePayload(FAHAD_PHONE, 'I will pay on the 15th'));
+    llm.next = decision({ intent: 'promise_to_pay', reply: 'Thank you.', debt_ref: 'DBT-2026-0002', promise_date: '2026-11-20' });
+    await post(app, messagePayload(FAHAD_PHONE, 'Sorry, the 20th'));
+    const { rows } = await admin.query(
+      `SELECT promised_date::text, status FROM app.promises WHERE debt_id = $1 AND status IN ('pending', 'cancelled')
+        ORDER BY created_at DESC LIMIT 2`,
+      [FAHAD_DEBT],
+    );
+    expect(rows).toEqual([
+      { promised_date: '2026-11-20', status: 'pending' },
+      { promised_date: '2026-11-15', status: 'cancelled' },
+    ]);
+  });
+
   it('ignores a promise date in the past or too far away', async () => {
     const llm = new FakeLlm();
     llm.next = decision({ intent: 'promise_to_pay', reply: 'Thank you.', debt_ref: 'DBT-2026-0002', promise_date: '2027-06-01' });
@@ -387,11 +405,12 @@ describe('conversations', () => {
       dispute_reason: 'Says he returned the motorcycle in August',
     });
     const app = await makeApp(llm, new FakeSender());
-    await admin.query(
-      `INSERT INTO app.follow_up_tasks (client_id, debt_id, task_type, due_at)
-       VALUES ('11111111-1111-4111-8111-111111111111', $1, 'send_reminder', now() + interval '1 day')`,
+    // The seed already plans a reminder for this debt (a debt has at most one open reminder).
+    const planned = await admin.query(
+      `SELECT count(*)::int AS n FROM app.follow_up_tasks WHERE debt_id = $1 AND status = 'pending' AND task_type = 'send_reminder'`,
       [IMRAN_DEBT],
     );
+    expect(planned.rows[0].n).toBe(1);
 
     await post(app, messagePayload(IMRAN_PHONE, 'I returned the bike in August, this is wrong'));
 
