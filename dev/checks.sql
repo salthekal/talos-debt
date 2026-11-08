@@ -190,5 +190,45 @@ BEGIN
   RAISE NOTICE 'PASS 11: inbound messages open the 24-hour window';
 END $$;
 
+-- ---------------------------------------------------------------------
+-- 12. Reference numbers are per client, in order, and skip used ones
+-- ---------------------------------------------------------------------
+SET LOCAL app.client_id = '11111111-1111-4111-8111-111111111111';
+DO $$
+DECLARE v_year text := to_char(now() AT TIME ZONE 'Asia/Riyadh', 'YYYY');
+BEGIN
+  -- The seed has D-000001 to D-000005.
+  ASSERT app.next_ref('debtor') = 'D-000006', 'CHECK 12a FAILED: first debtor reference should follow the seed';
+  ASSERT app.next_ref('debtor') = 'D-000007', 'CHECK 12b FAILED: references should go up by one';
+  INSERT INTO app.debtors (client_id, ref_code, id_type, id_number, full_name)
+  VALUES ('11111111-1111-4111-8111-111111111111', 'D-000008', 'iqama', '2000000099', 'Typed By Hand');
+  ASSERT app.next_ref('debtor') = 'D-000009', 'CHECK 12c FAILED: a reference typed by hand should be skipped';
+  -- The seed debts are DBT-2026-0001 to 0005.
+  ASSERT app.next_ref('debt') = 'DBT-' || v_year || '-' || CASE WHEN v_year = '2026' THEN '0006' ELSE '0001' END,
+    'CHECK 12d FAILED: debt references should follow the seed for the year';
+  PERFORM set_config('app.client_id', 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', true);
+  ASSERT app.next_ref('debtor') = 'D-000001', 'CHECK 12e FAILED: each client should have its own numbering';
+  PERFORM set_config('app.client_id', '11111111-1111-4111-8111-111111111111', true);
+  RAISE NOTICE 'PASS 12: reference numbers are per client and never repeat';
+END $$;
+
+-- ---------------------------------------------------------------------
+-- 13. One instrument record per debtor, type and reference number
+-- ---------------------------------------------------------------------
+DO $$
+BEGIN
+  INSERT INTO app.instruments (client_id, debtor_id, type_code, reference_number)
+  VALUES ('11111111-1111-4111-8111-111111111111', '33333333-3333-4333-8333-000000000002',
+          'nafith_promissory_note', 'NF-123 456');
+  BEGIN
+    INSERT INTO app.instruments (client_id, debtor_id, type_code, reference_number)
+    VALUES ('11111111-1111-4111-8111-111111111111', '33333333-3333-4333-8333-000000000002',
+            'nafith_promissory_note', 'nf-123456');
+    RAISE EXCEPTION 'CHECK 13 FAILED: the same note was stored twice';
+  EXCEPTION WHEN unique_violation THEN
+    RAISE NOTICE 'PASS 13: a note that backs several debts is stored once';
+  END;
+END $$;
+
 ROLLBACK;
 \echo 'All database checks passed.'
