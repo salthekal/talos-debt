@@ -1,9 +1,12 @@
 #!/usr/bin/env bash
 # Recreate the development database from scratch:
 #   1. drop and create the database
-#   2. run every migration in db/migrations in order
-#   3. load the fake seed data (dev/seed.sql)
-#   4. run the safety checks (dev/checks.sql)
+#   2. create the group roles (db/roles/group_roles.sql)
+#   3. run every migration in db/migrations in order
+#   4. create the login roles with development passwords (db/roles/login_roles.sql)
+#      and check them (db/roles/check_login_roles.sql)
+#   5. load the fake seed data (dev/seed.sql)
+#   6. run the safety checks (dev/checks.sql)
 #
 # Usage:
 #   ./scripts/db-reset.sh
@@ -33,6 +36,9 @@ echo "Resetting database '$DB_NAME'..."
 psql "$ADMIN_URL" -v ON_ERROR_STOP=1 -q -c "DROP DATABASE IF EXISTS \"$DB_NAME\" WITH (FORCE)"
 psql "$ADMIN_URL" -v ON_ERROR_STOP=1 -q -c "CREATE DATABASE \"$DB_NAME\""
 
+echo "Creating group roles (before the migrations, as on a managed database)..."
+psql "$DB_URL" -v ON_ERROR_STOP=1 -q -f "$ROOT/db/roles/group_roles.sql"
+
 echo "Running migrations..."
 for f in "$ROOT"/db/migrations/*.sql; do
   echo "  $(basename "$f")"
@@ -40,7 +46,10 @@ for f in "$ROOT"/db/migrations/*.sql; do
 done
 
 echo "Creating development login roles..."
-psql "$DB_URL" -v ON_ERROR_STOP=1 -q -f "$ROOT/dev/roles.sql"
+# Same file as production, with fixed public development passwords.
+TALOS_API_PASSWORD=talos_api_dev TALOS_JOBS_PASSWORD=talos_jobs_dev \
+  psql "$DB_URL" -v ON_ERROR_STOP=1 -q -f "$ROOT/db/roles/login_roles.sql"
+psql "$DB_URL" -v ON_ERROR_STOP=1 -q -f "$ROOT/db/roles/check_login_roles.sql" 2>&1 | sed -n 's/.*NOTICE:  /  /p'
 
 echo "Loading fake seed data..."
 psql "$DB_URL" -v ON_ERROR_STOP=1 -q -f "$ROOT/dev/seed.sql"

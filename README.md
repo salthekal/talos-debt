@@ -121,6 +121,13 @@ To try it in development:
 3. Send a reminder (above), then reply from your phone. In development, messages from
    `WHATSAPP_DEV_REDIRECT_TO` are treated as coming from the last debtor you messaged.
 
+### Setting up a real database
+
+`./scripts/db-reset.sh` is for development only. For production or staging, follow
+"Setting up a new database" in `CLAUDE.md`: group roles, migrations, then
+`./scripts/create-login-roles.sh`, which makes the API and worker logins with random
+passwords. It works on managed databases where the admin is not a superuser.
+
 ### Settings
 
 Copy `.env.example` to `.env` and fill in the values. Never commit `.env`.

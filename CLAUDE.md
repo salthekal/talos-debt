@@ -43,8 +43,11 @@ Interface languages: Arabic (right to left) and English. Debtor message language
   SET LOCAL app.user_id   = '<user uuid>';      -- omit for system actions
   SET LOCAL app.actor_type = 'user';            -- or 'system', 'ai'
   ```
-- Database roles: `talos_app` (API, RLS applies) and `talos_worker` (scheduler and webhooks, bypasses RLS). Keep worker code small and careful.
-  - `BYPASSRLS` is not inherited through role membership, so the worker login role (`talos_jobs`) must be created with `BYPASSRLS` itself. `assertWorkerRole` refuses to start otherwise.
+- Database roles: group roles `talos_app` (API, RLS applies) and `talos_worker` (scheduler and webhooks, sees all clients). Login roles `talos_api` (in `talos_app`) and `talos_jobs` (in `talos_worker`). Keep worker code small and careful.
+  - The worker sees all clients through a `worker_all` policy on every RLS table (`0003_worker_policies.sql`), **not** through `BYPASSRLS`. `BYPASSRLS` is not inherited through membership, and managed databases do not let you grant it. No application role has any special attribute.
+  - Any new table with Row Level Security needs a `worker_all` policy too. `db/roles/check_login_roles.sql` fails if one is missing.
+  - The API account must never be in `talos_worker` (it would see every client). `assertRlsEnforced` refuses to start if it is.
+  - Login roles are created by `db/roles/login_roles.sql`, the same file for development and production. See "Setting up a new database" below.
 - The database already enforces these, so do not duplicate or fight them in code:
   - Approved payments recalculate `debts.amount_outstanding`; reaching zero marks the debt `paid` and cancels pending reminders.
   - A new open dispute marks the debt `disputed` and cancels pending reminders.
@@ -99,6 +102,7 @@ Owner: **S** = Sal (API, worker, web, AI), **K** = Karam (database, infrastructu
 - Merged: the database, the back end API, WhatsApp reminders out, and the WhatsApp agent that reads replies and answers them.
 - Not tested with the real services yet: everything Meta and Gemini related is tested with fakes only. The first real run is step 1.9.
 - Nothing is hosted yet. There is no production database and no user login (only the development headers).
+- The database setup is ready for a managed database (no superuser needed). It was tested on a simulated one; see "Setting up a new database".
 - Open decision: should the agent reply outside working hours (`AGENT_REPLY_OUTSIDE_HOURS`)? Today the reply is held and staff are alerted.
 
 ### Pick up here
@@ -107,6 +111,17 @@ Owner: **S** = Sal (API, worker, web, AI), **K** = Karam (database, infrastructu
 2. `cd api && npm install && npm test` (all tests must pass before you change anything).
 3. Choose the next unticked step for your area below, and work on a branch named `<you>/<step>`.
 4. Open a pull request into `main` (not into another feature branch), and tick the step here in the same pull request.
+
+### Setting up a new database (production or staging)
+
+Run these in order, as the admin account the provider gives you (it does not need to be a superuser):
+
+1. Ask the provider to enable the `vector`, `pgcrypto` and `citext` extensions on the database, if the admin cannot.
+2. `psql "$ADMIN_URL" -v ON_ERROR_STOP=1 -f db/roles/group_roles.sql` (before the migrations).
+3. Every file in `db/migrations`, in order, with the same command.
+4. `ADMIN_DATABASE_URL="$ADMIN_URL" ./scripts/create-login-roles.sh` creates `talos_api` and `talos_jobs` with random 40-character passwords, checks them, and prints `DATABASE_URL` and `WORKER_DATABASE_URL` once. Put them straight into the secret manager. Rerun it to rotate the passwords.
+
+`$ADMIN_URL` must name the application database (not `postgres`) and should use `sslmode=require`. Never load `dev/seed.sql` outside development.
 
 ### Phase 0: Foundations
 
@@ -117,7 +132,8 @@ Owner: **S** = Sal (API, worker, web, AI), **K** = Karam (database, infrastructu
 - [x] ~~0.5 Back end skeleton: per-request client setting, dev login, roles, dashboard reads, payment approve and reject (S)~~ (`api/src/`)
 - [x] ~~0.6 Meta business portfolio and domain verification for talosksa.com (S)~~
 - [ ] 0.7 Meta business verification: submitted, waiting for Meta (S)
-- [ ] 0.8 Create the production worker login role **with `BYPASSRLS`** (it is not inherited from `talos_worker`), and the API role, with strong passwords (K)
+- [x] ~~0.8 Login roles for the API and the worker with strong passwords, working on managed databases (no superuser, no `BYPASSRLS`) (S, review by K)~~ (`db/roles/`, `db/migrations/0003_worker_policies.sql`, `scripts/create-login-roles.sh`)
+- [ ] 0.10 Decide whether to remove `BYPASSRLS` from `talos_worker` in `0001` (line 822). It is no longer needed and fails on managed databases; `db/roles/group_roles.sql` works around it today. Safe to change only because 0001 has never been applied to a real database (K)
 - [ ] 0.9 Legal check with a Saudi lawyer: client authorization wording, debtor consent clause, filing on clients' behalf, whether any license is needed (S+K)
 
 ### Phase 1: WhatsApp agent
@@ -175,7 +191,7 @@ Owner: **S** = Sal (API, worker, web, AI), **K** = Karam (database, infrastructu
 ### Phase 6: Production
 
 - [ ] 6.1 Choose a Saudi cloud provider and region; separate development and production environments (K)
-- [ ] 6.2 Managed PostgreSQL with pgvector, backups and a tested restore (K)
+- [ ] 6.2 Managed PostgreSQL with pgvector, backups and a tested restore, set up as in "Setting up a new database" (K)
 - [ ] 6.3 Secrets management (Meta token, app secret, AI key); never in the repository (K)
 - [ ] 6.4 Public HTTPS address for the API and the Meta webhook (K)
 - [ ] 6.5 Paid AI plan with data terms that allow real debtor data (the free tier is refused in production) (S+K)

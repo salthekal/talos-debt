@@ -28,7 +28,7 @@ const schema = z.object({
   WHATSAPP_APP_SECRET: z.string().optional(),
   WHATSAPP_VERIFY_TOKEN: z.string().optional(),
 
-  // The worker connection (member of talos_worker, bypasses RLS). Only used to
+  // The worker connection (member of talos_worker, sees all clients). Only used to
   // store raw webhooks and find which client a phone number belongs to.
   WORKER_DATABASE_URL: z.string().optional(),
 
