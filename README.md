@@ -71,6 +71,33 @@ x-user-id:   22222222-2222-4222-8222-000000000002
 | POST | `/api/payments/:id/reject` | Reject a payment with `{ "reason": "..." }` |
 | POST | `/api/debts/:id/send-reminder` | Send a reminder now, with `{ "purpose": "follow_up" }` (owner, admin, staff) |
 
+Getting data in (Phase 3). Changes need owner, admin or staff; viewers can only read.
+
+| Method | Path | What it does |
+|---|---|---|
+| GET | `/api/instrument-types` | Instrument types with their Najiz names (for dropdowns) |
+| GET | `/api/debtors?search=&limit=&offset=` | Find debtors by name, reference, ID number or phone |
+| POST | `/api/debtors` | New debtor with `phones` and optional `debts` (each with an `instrument`) |
+| PATCH | `/api/debtors/:id` | Change debtor details or `status` |
+| POST | `/api/debtors/:id/phones` | Add a phone |
+| PATCH | `/api/phones/:id` | `status` (wrong_number, opted_out...), `label`, `is_primary` |
+| GET / POST | `/api/debtors/:id/instruments` | List or add instruments (promissory notes, cheques...) |
+| PATCH | `/api/instruments/:id` | Change an instrument; `{ "verified": true }` marks the original as checked |
+| POST | `/api/debtors/:id/debts` | Add one debt, or `{ "debts": [...] }` |
+| PATCH | `/api/debts/:id` | Change a debt, its `instrument`, or correct its `amount` |
+| GET | `/api/imports/template` | The Excel template |
+| POST | `/api/imports` | Upload a filled template (multipart, field `file`): returns the check report |
+| GET | `/api/imports`, `/api/imports/:id` | Recent imports, one import with its report |
+| POST | `/api/imports/:id/confirm` | Save every row together (all or nothing) |
+| POST | `/api/imports/:id/cancel` | Drop an import |
+| POST | `/api/documents` | Upload a PDF or photo (multipart: `doc_type`, `debtor_id` / `debt_id` / `instrument_id`, then `file`) |
+| GET | `/api/documents?debtor_id=` (or `debt_id`, `instrument_id`, `scope=client`) | List documents |
+| GET | `/api/documents/:id/download` | Download a document |
+| GET | `/api/enforceability` | Share of open debt that can go straight to Najiz, by instrument, and paper notes at risk |
+
+Errors in what was sent give `400` with `errors: [{ field, message }]`. Warnings never
+block: they come back with the saved record. Records of another client give `404`.
+
 Money is returned as text (for example `"1280.50"`) so it is never rounded.
 
 ### Sending WhatsApp messages in development

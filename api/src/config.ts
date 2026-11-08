@@ -48,6 +48,27 @@ const schema = z.object({
     .enum(['true', 'false'])
     .default('false')
     .transform((v) => v === 'true'),
+
+  // Uploaded files (step 3.3). 'local' is a folder on this machine: development
+  // and tests only. Production uses a private Google Cloud Storage bucket in
+  // the Dammam region (docs/file-storage.md).
+  STORAGE_DRIVER: z.enum(['local', 'gcs']).default('local'),
+  STORAGE_LOCAL_DIR: z.string().default('.data/files'),
+  GCS_BUCKET: z.string().optional(),
+  // Optional Cloud KMS key for the bucket, e.g. projects/p/locations/me-central2/keyRings/r/cryptoKeys/k
+  GCS_KMS_KEY: z.string().optional(),
+  // Largest document a user can upload, in megabytes. Excel imports have their own 5 MB limit.
+  MAX_UPLOAD_MB: z.coerce.number().int().min(1).max(50).default(10),
+
+  // Start date of the new Enforcement Law (YYYY-MM-DD), once it is published.
+  // Paper promissory notes and bills of exchange stay enforceable for one year
+  // after it. Leave empty while the date is unknown: those notes are still
+  // flagged, with no deadline yet.
+  ENFORCEMENT_LAW_START_DATE: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/, 'must be YYYY-MM-DD')
+    .optional()
+    .or(z.literal('').transform(() => undefined)),
 });
 
 export type Config = z.infer<typeof schema>;
@@ -75,6 +96,14 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   }
   if (config.AI_PROVIDER !== 'none' && !config.AI_API_KEY) {
     throw new Error('AI_API_KEY is required when AI_PROVIDER is set.');
+  }
+  if (config.NODE_ENV === 'production' && config.STORAGE_DRIVER !== 'gcs') {
+    throw new Error(
+      'STORAGE_DRIVER=local is not allowed in production: files must go to the private bucket in Saudi Arabia (STORAGE_DRIVER=gcs).',
+    );
+  }
+  if (config.STORAGE_DRIVER === 'gcs' && !config.GCS_BUCKET) {
+    throw new Error('GCS_BUCKET is required when STORAGE_DRIVER=gcs.');
   }
   if (config.NODE_ENV === 'production' && config.WORKER_DATABASE_URL && !config.WHATSAPP_APP_SECRET) {
     throw new Error('WHATSAPP_APP_SECRET is required in production to check webhook signatures.');
