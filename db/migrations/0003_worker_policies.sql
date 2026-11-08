@@ -2,10 +2,9 @@
 -- 0003: let the worker see all clients through policies, not BYPASSRLS
 --
 -- The worker (scheduler and WhatsApp webhook) must see every client's
--- rows. 0001 gave the talos_worker group role BYPASSRLS, but PostgreSQL
--- does not pass BYPASSRLS down to login roles that are members of it,
--- and managed databases (Cloud SQL, RDS, Azure and similar) usually do
--- not let the admin account grant BYPASSRLS at all.
+-- rows. BYPASSRLS does not work for this: PostgreSQL does not pass it
+-- down to login roles that are members of a group, and managed databases
+-- (Cloud SQL, RDS, Azure and similar) do not let the admin grant it.
 --
 -- Policies DO apply through membership, so this adds one policy per
 -- protected table that lets members of talos_worker read and write every

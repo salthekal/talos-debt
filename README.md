@@ -124,7 +124,7 @@ To try it in development:
 ### Setting up a real database
 
 `./scripts/db-reset.sh` is for development only. For production or staging, follow
-"Setting up a new database" in `CLAUDE.md`: group roles, migrations, then
+"Setting up a new database" in `CLAUDE.md`: the migrations, then
 `./scripts/create-login-roles.sh`, which makes the API and worker logins with random
 passwords. It works on managed databases where the admin is not a superuser.
 

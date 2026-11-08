@@ -97,12 +97,12 @@ This is the full list of steps to build the product. Finished steps are ticked a
 
 Owner: **S** = Sal (API, worker, web, AI), **K** = Karam (database, infrastructure, accounts), **S+K** = together.
 
-### Where things stand (last updated 7 November 2026)
+### Where things stand (last updated 8 November 2026)
 
 - Merged: the database, the back end API, WhatsApp reminders out, and the WhatsApp agent that reads replies and answers them.
 - Not tested with the real services yet: everything Meta and Gemini related is tested with fakes only. The first real run is step 1.9.
 - Nothing is hosted yet. There is no production database and no user login (only the development headers).
-- The database setup is ready for a managed database (no superuser needed). It was tested on a simulated one; see "Setting up a new database".
+- The database setup is ready for a managed database (no superuser needed): the migrations, then one script. It was tested on a simulated one; see "Setting up a new database".
 - Open decision: should the agent reply outside working hours (`AGENT_REPLY_OUTSIDE_HOURS`)? Today the reply is held and staff are alerted.
 
 ### Pick up here
@@ -117,9 +117,8 @@ Owner: **S** = Sal (API, worker, web, AI), **K** = Karam (database, infrastructu
 Run these in order, as the admin account the provider gives you (it does not need to be a superuser):
 
 1. Ask the provider to enable the `vector`, `pgcrypto` and `citext` extensions on the database, if the admin cannot.
-2. `psql "$ADMIN_URL" -v ON_ERROR_STOP=1 -f db/roles/group_roles.sql` (before the migrations).
-3. Every file in `db/migrations`, in order, with the same command.
-4. `ADMIN_DATABASE_URL="$ADMIN_URL" ./scripts/create-login-roles.sh` creates `talos_api` and `talos_jobs` with random 40-character passwords, checks them, and prints `DATABASE_URL` and `WORKER_DATABASE_URL` once. Put them straight into the secret manager. Rerun it to rotate the passwords.
+2. Every file in `db/migrations`, in order: `psql "$ADMIN_URL" -v ON_ERROR_STOP=1 -f db/migrations/<file>`.
+3. `ADMIN_DATABASE_URL="$ADMIN_URL" ./scripts/create-login-roles.sh` creates `talos_api` and `talos_jobs` with random 40-character passwords, checks them, and prints `DATABASE_URL` and `WORKER_DATABASE_URL` once. Put them straight into the secret manager. Rerun it to rotate the passwords.
 
 `$ADMIN_URL` must name the application database (not `postgres`) and should use `sslmode=require`. Never load `dev/seed.sql` outside development.
 
@@ -133,8 +132,8 @@ Run these in order, as the admin account the provider gives you (it does not nee
 - [x] ~~0.6 Meta business portfolio and domain verification for talosksa.com (S)~~
 - [ ] 0.7 Meta business verification: submitted, waiting for Meta (S)
 - [x] ~~0.8 Login roles for the API and the worker with strong passwords, working on managed databases (no superuser, no `BYPASSRLS`) (S, review by K)~~ (`db/roles/`, `db/migrations/0003_worker_policies.sql`, `scripts/create-login-roles.sh`)
-- [ ] 0.10 Decide whether to remove `BYPASSRLS` from `talos_worker` in `0001` (line 822). It is no longer needed and fails on managed databases; `db/roles/group_roles.sql` works around it today. Safe to change only because 0001 has never been applied to a real database (K)
 - [ ] 0.9 Legal check with a Saudi lawyer: client authorization wording, debtor consent clause, filing on clients' behalf, whether any license is needed (S+K)
+- [x] ~~0.10 Remove `BYPASSRLS` from `talos_worker` in `0001`, so the migrations run on a managed database with no workaround (approved by K; safe because 0001 had never been applied to a real database)~~ (`db/migrations/0001_initial_schema.sql`)
 
 ### Phase 1: WhatsApp agent
 

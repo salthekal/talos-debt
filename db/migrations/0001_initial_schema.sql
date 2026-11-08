@@ -809,7 +809,8 @@ CREATE POLICY write_own ON app.message_templates FOR ALL
 -- 13. ROLES
 --   talos_app     used by the web app and API. RLS applies.
 --   talos_worker  used by the scheduler and webhook handlers, which must
---                 see all clients. Bypasses RLS, so keep this code small.
+--                 see all clients, through the worker_all policies in
+--                 0003 (not BYPASSRLS), so keep this code small.
 --   Migrations run as the database owner (not either of these).
 -- =====================================================================
 
@@ -819,7 +820,7 @@ BEGIN
     CREATE ROLE talos_app NOLOGIN;
   END IF;
   IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'talos_worker') THEN
-    CREATE ROLE talos_worker NOLOGIN BYPASSRLS;
+    CREATE ROLE talos_worker NOLOGIN;
   END IF;
 END $$;
 
@@ -832,9 +833,7 @@ GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA app TO talos_app, talos_worker;
 REVOKE INSERT, UPDATE, DELETE ON app.instrument_types, app.sender_numbers FROM talos_app;
 -- Raw webhooks are only for the worker.
 REVOKE ALL ON app.webhook_events FROM talos_app;
--- Login users get one of the roles, e.g.:
---   CREATE ROLE talos_api LOGIN PASSWORD '...' IN ROLE talos_app;
---   CREATE ROLE talos_jobs LOGIN PASSWORD '...' IN ROLE talos_worker;
+-- Login users (talos_api, talos_jobs) are created by db/roles/login_roles.sql.
 
 -- =====================================================================
 -- 14. SEED: Najiz instrument types (from the Najiz screenshots)
