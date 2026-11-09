@@ -39,6 +39,12 @@ INSERT INTO app.users (id, client_id, full_name, email, phone, role) VALUES
  ('22222222-2222-4222-8222-000000000002', '11111111-1111-4111-8111-111111111111',
   'Demo Collections Staff', 'staff@demo.example', '+966500000101', 'staff');
 
+-- Development password for both fake users: talos-dev-password
+-- (a public, development-only value; real users set their own through an emailed link).
+INSERT INTO auth.credentials (user_id, password_hash) VALUES
+ ('22222222-2222-4222-8222-000000000001', 'scrypt$32768$8$1$q1mxvHhfWtEKnnnSE9poIQ==$bEJNVC56snxqb5qackDaZMJtT1B3l4ZFkDgKm1IQ0G8='),
+ ('22222222-2222-4222-8222-000000000002', 'scrypt$32768$8$1$q1mxvHhfWtEKnnnSE9poIQ==$bEJNVC56snxqb5qackDaZMJtT1B3l4ZFkDgKm1IQ0G8=');
+
 INSERT INTO app.follow_up_rules (client_id, interval_days, max_attempts, working_hours_start,
                                  working_hours_end, legal_after_attempts, languages, auto_send)
 VALUES ('11111111-1111-4111-8111-111111111111', 2, 5, '09:00', '20:00', 5, '{ar,en,ur}', false);

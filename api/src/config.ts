@@ -7,8 +7,21 @@ const schema = z.object({
   HOST: z.string().default('0.0.0.0'),
   // The API connects as a login role that is a member of talos_app (RLS applies).
   DATABASE_URL: z.string().min(1),
-  // 'dev' trusts the x-client-id and x-user-id headers. Never allowed in production.
-  AUTH_MODE: z.enum(['dev']).default('dev'),
+  // Login. Staff always log in with email and password (a session cookie).
+  // 'dev' also trusts the x-client-id and x-user-id headers (tests, scripts). Never allowed in production.
+  AUTH_MODE: z.enum(['dev', 'session']).default('dev'),
+  // Where the dashboard runs; links in emails point here. Must be https in production.
+  APP_URL: z.string().url().default('http://localhost:5173'),
+  // A session ends after this long without activity, and after SESSION_MAX_DAYS in any case.
+  SESSION_IDLE_MINUTES: z.coerce.number().int().min(5).max(7 * 24 * 60).default(12 * 60),
+  SESSION_MAX_DAYS: z.coerce.number().int().min(1).max(30).default(7),
+  // After this many wrong passwords in a row, the account waits LOGIN_LOCK_MINUTES.
+  LOGIN_LOCK_AFTER: z.coerce.number().int().min(3).max(50).default(8),
+  LOGIN_LOCK_MINUTES: z.coerce.number().int().min(1).max(24 * 60).default(15),
+  // Emails (password reset, invitations). 'log' writes them to api/.data/mail (development only).
+  MAIL_DRIVER: z.enum(['log', 'smtp']).default('log'),
+  SMTP_URL: z.string().optional(), // smtps://user:password@host:465
+  MAIL_FROM: z.string().default('Talos <no-reply@talosksa.com>'),
   LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent']).default('info'),
 
   // WhatsApp Cloud API (Meta). Keep the token only in .env, never in git.
@@ -93,7 +106,16 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   }
   const config = parsed.data;
   if (config.NODE_ENV === 'production' && config.AUTH_MODE === 'dev') {
-    throw new Error('AUTH_MODE=dev is not allowed in production. Set up real login first.');
+    throw new Error('AUTH_MODE=dev is not allowed in production. Use AUTH_MODE=session.');
+  }
+  if (config.NODE_ENV === 'production' && !config.APP_URL.startsWith('https://')) {
+    throw new Error('APP_URL must be https in production (login cookies and email links depend on it).');
+  }
+  if (config.NODE_ENV === 'production' && config.MAIL_DRIVER !== 'smtp') {
+    throw new Error('MAIL_DRIVER=smtp is required in production, so password reset emails really go out.');
+  }
+  if (config.MAIL_DRIVER === 'smtp' && !config.SMTP_URL) {
+    throw new Error('SMTP_URL is required when MAIL_DRIVER=smtp.');
   }
   if (
     config.NODE_ENV === 'production' &&
