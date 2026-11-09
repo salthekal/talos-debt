@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" fill="none" role="img" aria-label="Talos">
+    <rect width="512" height="512" rx="112" fill="#121B33"/>
+    <g transform="translate(256,256) scale(1.4167) translate(-650.5,-293.5)">
+        <circle cx="650.5" cy="293.5" r="100" fill="none" stroke="#FFFFFF" stroke-width="18.95"/>
+        <circle cx="650.5" cy="193.5" r="16.84" fill="#FFFFFF"/>
+        <circle cx="564.2" cy="343.5" r="16.84" fill="#FFFFFF"/>
+        <circle cx="736.8" cy="343.5" r="16.84" fill="#FFFFFF"/>
+        <circle cx="650.5" cy="293.5" r="25.79" fill="#0E9F6E"/>
+    </g>
+</svg>

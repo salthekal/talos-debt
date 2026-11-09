@@ -86,9 +86,9 @@ export async function sendDailySummaries(
 
       // Dated with the scheduler's clock, which the "one per day" check above also uses.
       await db.query(
-        `INSERT INTO app.notifications (client_id, kind, title, target_table, created_at)
-         VALUES (app.current_client_id(), 'system', $1, $2, $3)`,
-        [summaryTitle(day, counts), SUMMARY_MARK, now],
+        `INSERT INTO app.notifications (client_id, kind, title, target_table, created_at, data)
+         VALUES (app.current_client_id(), 'system', $1, $2, $3, $4)`,
+        [summaryTitle(day, counts), SUMMARY_MARK, now, JSON.stringify({ event: 'summary', day, summary: counts })],
       );
       return true;
     });

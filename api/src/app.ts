@@ -1,7 +1,6 @@
 import multipart from '@fastify/multipart';
 import Fastify, { type FastifyInstance } from 'fastify';
 import type pg from 'pg';
-import { devAuth } from './auth.js';
 import type { Config } from './config.js';
 import { dashboardRoutes } from './routes/dashboard.js';
 import { debtorRoutes } from './routes/debtors.js';
@@ -13,8 +12,12 @@ import { LocalDiskStorage, type FileStorage } from './storage/storage.js';
 import { messageRoutes } from './routes/messages.js';
 import { paymentRoutes } from './routes/payments.js';
 import { reminderRoutes } from './routes/reminders.js';
+import { workspaceRoutes } from './routes/workspace.js';
 import { GeminiClient, type LlmClient } from './ai/llm.js';
 import { webhookRoutes } from './routes/webhooks.js';
+import { createMailer, type Mailer } from './login/mailer.js';
+import { loginRoutes, type RateLimiter } from './login/routes.js';
+import { authenticate } from './login/session.js';
 import { MetaCloudSender, type WhatsAppSender } from './whatsapp/client.js';
 
 export interface AppDeps {
@@ -30,6 +33,10 @@ export interface AppDeps {
   processWebhooksInline?: boolean;
   /** Where uploaded files go. server.ts passes the configured one; tests pass a temporary folder. */
   storage?: FileStorage;
+  /** Sends login emails; defaults to the configured one. Tests pass a fake. */
+  mailer?: Mailer;
+  /** Login attempt limiter; tests pass a generous one. */
+  loginLimiter?: RateLimiter;
 }
 
 export function buildApp(config: Config, pool: pg.Pool, deps: AppDeps = {}): FastifyInstance {
@@ -64,15 +71,22 @@ export function buildApp(config: Config, pool: pg.Pool, deps: AppDeps = {}): Fas
     }
   });
 
-  // Everything under /api needs a logged-in user of a client.
+  // Login, logout, forgot and reset password: before a user is known.
+  const mailer = deps.mailer ?? createMailer(config);
+  app.register(async (open) => {
+    loginRoutes(open, { pool, config, mailer, limiter: deps.loginLimiter });
+  });
+
+  // Everything else under /api needs a logged-in user of a client.
   app.register(async (api) => {
     // File uploads: one file per request. Field values must come before the file.
     await api.register(multipart, { limits: { ...UPLOAD_LIMITS, fileSize: config.MAX_UPLOAD_MB * 1024 * 1024 } });
-    api.addHook('preHandler', devAuth(pool));
+    api.addHook('preHandler', authenticate(pool, config));
     dashboardRoutes(api, pool);
     paymentRoutes(api, pool);
     messageRoutes(api, outbound);
     reminderRoutes(api, pool);
+    workspaceRoutes(api, { pool, login: { pool, config, mailer } });
     debtorRoutes(api, pool);
     importRoutes(api, files);
     documentRoutes(api, files);

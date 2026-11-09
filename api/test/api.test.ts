@@ -142,6 +142,9 @@ describe('dashboard reads', () => {
     expect(body.phones).toHaveLength(1);
     expect(body.debts).toHaveLength(1);
     expect(body.timeline.map((e: { kind: string }) => e.kind)).toEqual(expect.arrayContaining(['message', 'payment']));
+    // Money stays text inside the timeline too (jsonb would otherwise turn it into a JSON number).
+    const payment = body.timeline.find((e: { kind: string }) => e.kind === 'payment');
+    expect(payment.data.amount).toBe('1000.00');
   });
 
   it('lists pending payments and open disputes', async () => {
@@ -232,5 +235,22 @@ describe('payment review', () => {
     expect(res.statusCode).toBe(200);
     const debt = await admin.query(`SELECT amount_outstanding FROM app.debts WHERE id = $1`, [RAHIM_DEBT]);
     expect(debt.rows[0].amount_outstanding).toBe('1100.00');
+  });
+});
+
+describe('database connections', () => {
+  it('an idle connection closed by the server does not stop the process', async () => {
+    const pool = createPool(API_URL);
+    const client = await pool.connect();
+    const { rows } = await client.query<{ pid: number }>('SELECT pg_backend_pid() AS pid');
+    client.release();
+    const admin = createPool(ADMIN_URL);
+    await admin.query('SELECT pg_terminate_backend($1)', [rows[0]!.pid]);
+    await admin.end();
+    // Without an error listener this would throw an unhandled 'error' event.
+    await new Promise((r) => setTimeout(r, 200));
+    const again = await pool.query<{ ok: number }>('SELECT 1 AS ok');
+    expect(again.rows[0]!.ok).toBe(1);
+    await pool.end();
   });
 });

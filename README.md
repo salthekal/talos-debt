@@ -42,6 +42,26 @@ payments need a reviewer, paid and disputed debts stop their reminders, every ch
 the log cannot be edited, and legal cases need approval. The same checks run automatically on every
 pull request (see `.github/workflows/db-checks.yml`).
 
+### Dashboard (web)
+
+```bash
+cd web
+npm install
+npm run dev                   # http://localhost:5173, talks to the API on :3000
+npm test                      # screen tests with sample data (English and Arabic)
+VITE_DEMO=1 npm run dev       # the same screens with sample data, no API needed
+npm run build:prototype       # one HTML file with sample data, for design review
+npm run e2e                   # real browser against the real API and a fresh dev database
+```
+
+The end-to-end run (`web/e2e`) logs in, resets passwords, invites a person, records and approves
+payments, decides a dispute, pauses, adds a debtor, imports an Excel file and changes settings,
+then checks each result through the API. It opens every page in English and Arabic, light and
+dark, at desktop and phone width, and fails on any page wider than the screen, English left in an
+Arabic page, a browser error or an accessibility problem (axe-core, WCAG 2.1 AA). It needs the API
+running with `AUTH_MODE=session` and `MAIL_DRIVER=log`, the dashboard on :5173, `ADMIN_DATABASE_URL`,
+Python with `openpyxl`, and Chromium for Playwright. CI runs it on every pull request.
+
 ### Back end API
 
 ```bash
@@ -52,12 +72,24 @@ npm run dev                   # starts on http://localhost:3000
 npm test                      # resets a separate talos_test database and runs the tests
 ```
 
-During development, log in by sending two headers with every request (the demo staff user):
+Staff log in with email and password (step 4.2): the dashboard gets an HttpOnly cookie, and every
+request that changes something must also send the header `x-talos: 1`. The fake users are
+`owner@demo.example` and `staff@demo.example`, password `talos-dev-password`. Password reset and
+invitation emails are written to `api/.data/mail` in development (`MAIL_DRIVER=log`).
+
+With `AUTH_MODE=dev` (development only) you can also call the API with two headers instead:
 
 ```
 x-client-id: 11111111-1111-4111-8111-111111111111
 x-user-id:   22222222-2222-4222-8222-000000000002
 ```
+
+| Method | Path | What it does |
+|---|---|---|
+| POST | `/api/auth/login` | `{ email, password }`: sets the login cookie |
+| POST | `/api/auth/logout` | Ends this session |
+| POST | `/api/auth/forgot` | `{ email }`: emails a reset link if the account exists (always answers 202) |
+| GET / POST | `/api/auth/reset` | Check a reset or invitation link; `{ token, password }` sets the password |
 
 | Method | Path | What it returns |
 |---|---|---|
@@ -70,6 +102,16 @@ x-user-id:   22222222-2222-4222-8222-000000000002
 | POST | `/api/payments/:id/approve` | Approve a payment (owner, admin, staff) |
 | POST | `/api/payments/:id/reject` | Reject a payment with `{ "reason": "..." }` |
 | POST | `/api/debts/:id/send-reminder` | Send a reminder now, with `{ "purpose": "follow_up" }` (owner, admin, staff) |
+| GET | `/api/dashboard/summary` | Count and amount per debt status, reminders sent, open promises, legal |
+| GET | `/api/notifications` | `{ unread, items }`; each item has `data` the dashboard turns into Arabic or English |
+| POST | `/api/notifications/read` | `{ ids }` or `{ all: true }` |
+| POST | `/api/debts/:id/payments` | Record a payment received outside WhatsApp (approved at once, in your name) |
+| POST | `/api/debts/:id/pause`, `/resume` | Stop reminders `{ reason, until? }`, or start them again |
+| POST | `/api/disputes/:id/resolve` | `{ outcome: "amount_correct" }` or `{ outcome: "debtor_right", action: "correct_amount" \| "close" \| "pause" }` |
+| GET / PATCH | `/api/settings/rules` | Follow-up rules (changes: owner, admin) |
+| GET | `/api/templates` | Message templates and their WhatsApp approval |
+| GET / POST / PATCH | `/api/users`, `/api/users/:id` | The team: invite, change role, remove access (owner, admin) |
+| POST | `/api/users/:id/invite` | Send the invitation email again |
 
 Getting data in (Phase 3). Changes need owner, admin or staff; viewers can only read.
 

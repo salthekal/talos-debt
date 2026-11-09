@@ -56,5 +56,17 @@ BEGIN
      AND NOT has_table_privilege('talos_jobs', 'audit.activity_log', 'UPDATE, DELETE, TRUNCATE'),
     'ROLE CHECK 6 FAILED: an application role can change or delete the audit log';
 
+  -- 7. Passwords, sessions and reset links (0006) are reachable only through the auth functions.
+  ASSERT NOT EXISTS (
+    SELECT 1 FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+     WHERE n.nspname = 'auth' AND c.relkind = 'r'
+       AND (has_table_privilege('talos_api', c.oid, 'SELECT, INSERT, UPDATE, DELETE')
+            OR has_table_privilege('talos_jobs', c.oid, 'SELECT, INSERT, UPDATE, DELETE'))),
+    'ROLE CHECK 7 FAILED: an application role can read or change the auth tables directly';
+  ASSERT NOT EXISTS (
+    SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+     WHERE n.nspname = 'auth' AND has_function_privilege('talos_jobs', p.oid, 'EXECUTE')),
+    'ROLE CHECK 7b FAILED: the worker can call the auth functions';
+
   RAISE NOTICE 'PASS: login roles are set up safely';
 END $$;
