@@ -282,10 +282,11 @@ export async function handleInbound(deps: InboundDeps, msg: InboundMessage): Pro
           : intent === 'dispute'
             ? `${info.debtor_name} disputes the amount`
             : `${info.debtor_name} needs a reply from the team`;
+      const event = !canSendNow ? 'reply_held' : kind === 'payment_to_review' ? 'receipt' : kind === 'dispute' ? 'dispute' : 'needs_reply';
       await db.query(
-        `INSERT INTO app.notifications (client_id, kind, title, target_table, target_id)
-         VALUES (app.current_client_id(), $1, $2, 'app.messages', $3)`,
-        [kind, title, messageId],
+        `INSERT INTO app.notifications (client_id, kind, title, target_table, target_id, data)
+         VALUES (app.current_client_id(), $1, $2, 'app.messages', $3, $4)`,
+        [kind, title, messageId, JSON.stringify({ event, name: info.debtor_name, ref: debt?.ref_code ?? null, debtor_id: who.debtor_id })],
       );
     }
 

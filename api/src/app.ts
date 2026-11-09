@@ -12,6 +12,7 @@ import { LocalDiskStorage, type FileStorage } from './storage/storage.js';
 import { messageRoutes } from './routes/messages.js';
 import { paymentRoutes } from './routes/payments.js';
 import { reminderRoutes } from './routes/reminders.js';
+import { workspaceRoutes } from './routes/workspace.js';
 import { GeminiClient, type LlmClient } from './ai/llm.js';
 import { webhookRoutes } from './routes/webhooks.js';
 import { createMailer, type Mailer } from './login/mailer.js';
@@ -85,6 +86,7 @@ export function buildApp(config: Config, pool: pg.Pool, deps: AppDeps = {}): Fas
     paymentRoutes(api, pool);
     messageRoutes(api, outbound);
     reminderRoutes(api, pool);
+    workspaceRoutes(api, { pool, login: { pool, config, mailer } });
     debtorRoutes(api, pool);
     importRoutes(api, files);
     documentRoutes(api, files);

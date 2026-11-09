@@ -125,12 +125,13 @@ export async function recoverStaleTasks(workerPool: pg.Pool, staleMinutes: numbe
           [message.id],
         );
         await client.query(
-          `INSERT INTO app.notifications (client_id, kind, title, target_table, target_id)
-           VALUES ($1, 'system', $2, 'app.debts', $3)`,
+          `INSERT INTO app.notifications (client_id, kind, title, target_table, target_id, data)
+           VALUES ($1, 'system', $2, 'app.debts', $3, $4)`,
           [
             t.client_id,
             `Reminder for ${message.ref_code} may not have been sent (the system stopped while sending). Check before sending again.`,
             t.debt_id,
+            JSON.stringify({ event: 'maybe_not_sent', ref: message.ref_code }),
           ],
         );
       }

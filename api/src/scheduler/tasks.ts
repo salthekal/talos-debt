@@ -84,11 +84,15 @@ async function reschedule(db: Db, taskId: string, dueAt: Date, reason: string, t
   );
 }
 
-async function notify(db: Db, kind: string, title: string, debtId: string) {
+/**
+ * `title` is the English text (fallback); `data` holds the facts so the
+ * dashboard can show the notification in Arabic or English (migration 0007).
+ */
+async function notify(db: Db, kind: string, title: string, debtId: string, data: Record<string, unknown>) {
   await db.query(
-    `INSERT INTO app.notifications (client_id, kind, title, target_table, target_id)
-     VALUES (app.current_client_id(), $1, $2, 'app.debts', $3)`,
-    [kind, title, debtId],
+    `INSERT INTO app.notifications (client_id, kind, title, target_table, target_id, data)
+     VALUES (app.current_client_id(), $1, $2, 'app.debts', $3, $4)`,
+    [kind, title, debtId, JSON.stringify(data)],
   );
 }
 
@@ -208,7 +212,9 @@ async function runSendReminder(deps: TaskDeps, task: ClaimedTask): Promise<TaskO
         default: {
           // no_active_phone, no_template, not_configured: staff must fix something first.
           await finish(db, now, task.id, 'failed', { reason: err.code, error: err.message, triesUsed: true });
-          await notify(db, 'system', `Reminder for ${debt.ref_code} (${debt.debtor_name}) was not sent: ${err.message}`, debt.id);
+          await notify(db, 'system', `Reminder for ${debt.ref_code} (${debt.debtor_name}) was not sent: ${err.message}`, debt.id, {
+            event: 'not_sent', name: debt.debtor_name, ref: debt.ref_code, problem: err.code,
+          });
           return { status: 'failed', reason: err.code };
         }
       }
@@ -234,7 +240,9 @@ async function runSendReminder(deps: TaskDeps, task: ClaimedTask): Promise<TaskO
       error: `${result.errorCode}: ${result.errorMessage ?? ''}`.slice(0, 500),
       triesUsed: true,
     });
-    await notify(db, 'system', `Reminder for ${debt.ref_code} (${debt.debtor_name}) could not be sent by WhatsApp`, debt.id);
+    await notify(db, 'system', `Reminder for ${debt.ref_code} (${debt.debtor_name}) could not be sent by WhatsApp`, debt.id, {
+      event: 'send_failed', name: debt.debtor_name, ref: debt.ref_code,
+    });
     return { status: 'failed', reason: 'send_failed' };
   });
 }
@@ -332,6 +340,7 @@ async function runPromiseCheck(deps: TaskDeps, task: ClaimedTask): Promise<TaskO
             ? `${debt.debtor_name} did not pay by the promised date (${latestPromise.promised_date}) for ${debt.ref_code}`
             : `${debt.debtor_name} paid only part of what was promised for ${debt.ref_code}`,
           debt.id,
+          { event: verdict === 'broken' ? 'promise_broken' : 'promise_partly', name: debt.debtor_name, ref: debt.ref_code, date: latestPromise.promised_date },
         );
       }
       const refreshed = (await loadDebt(db, debt.id))!;
@@ -381,6 +390,7 @@ async function runLegalReady(deps: TaskDeps, task: ClaimedTask): Promise<TaskOut
         'reply',
         `${debt.debtor_name} replied after the last reminder for ${debt.ref_code}: decide whether to send it to legal`,
         debt.id,
+        { event: 'replied_after_last', name: debt.debtor_name, ref: debt.ref_code },
       );
       return skip('debtor_replied');
     }
@@ -396,6 +406,7 @@ async function runLegalReady(deps: TaskDeps, task: ClaimedTask): Promise<TaskOut
       'legal_ready',
       `${debt.ref_code} (${debt.debtor_name}) is ready for legal: ${debt.attempts_count} reminders and no reply`,
       debt.id,
+      { event: 'legal_ready', name: debt.debtor_name, ref: debt.ref_code, reminders: debt.attempts_count },
     );
     await finish(db, now, task.id, 'done', { reason: 'legal_ready' });
     return { status: 'done', note: 'legal_ready' };
