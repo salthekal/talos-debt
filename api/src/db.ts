@@ -13,7 +13,13 @@ export type Db = pg.PoolClient;
 
 export function createPool(connectionString: string): pg.Pool {
   // numeric (money) stays a string, so amounts are never rounded through floats.
-  return new pg.Pool({ connectionString, max: 10 });
+  const pool = new pg.Pool({ connectionString, max: 10 });
+  // An idle connection closed by the server (restart, failover, maintenance) must not
+  // stop the process: the pool drops it and opens a new one on the next query.
+  pool.on('error', (err) => {
+    console.error(JSON.stringify({ level: 40, msg: 'Idle database connection closed', error: err.message }));
+  });
+  return pool;
 }
 
 /**

@@ -100,6 +100,7 @@ export function dashboardRoutes(app: FastifyInstance, pool: pg.Pool) {
           [p.id],
         );
       const debts = await db.query(`SELECT * FROM app.v_debt_overview WHERE debtor_id = $1 ORDER BY ref_code`, [p.id]);
+      // Amounts inside jsonb would become JSON numbers: cast them to text, like every other amount.
       const timeline = await db.query(
           `SELECT * FROM (
              SELECT 'message' AS kind, m.id, m.debt_id, m.created_at AS at,
@@ -108,12 +109,12 @@ export function dashboardRoutes(app: FastifyInstance, pool: pg.Pool) {
                FROM app.messages m WHERE m.debtor_id = $1
              UNION ALL
              SELECT 'payment', pay.id, pay.debt_id, pay.created_at,
-                    jsonb_build_object('amount', pay.amount, 'method', pay.method, 'status', pay.status,
+                    jsonb_build_object('amount', pay.amount::text, 'method', pay.method, 'status', pay.status,
                                        'rejection_reason', pay.rejection_reason)
                FROM app.payments pay JOIN app.debts d ON d.id = pay.debt_id WHERE d.debtor_id = $1
              UNION ALL
              SELECT 'promise', pr.id, pr.debt_id, pr.created_at,
-                    jsonb_build_object('promised_amount', pr.promised_amount,
+                    jsonb_build_object('promised_amount', pr.promised_amount::text,
                                        'promised_date', pr.promised_date, 'status', pr.status)
                FROM app.promises pr JOIN app.debts d ON d.id = pr.debt_id WHERE d.debtor_id = $1
              UNION ALL
