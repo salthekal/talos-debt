@@ -45,6 +45,8 @@ The migrations, in order. Each one is applied once and never edited after it has
 | `0003_worker_policies.sql` | A `worker_all` policy on every RLS table, so the worker sees all clients without `BYPASSRLS` | Sal, reviewed by Karam |
 | `0004_data_intake.sql` | `app.next_ref()` reference numbers, import reports, one record per instrument | Karam |
 | `0005_scheduler.sql` | On `follow_up_tasks`: `approved_by`/`approved_at`, `tries`, `last_error`, `finished_at`, and at most one open reminder and one open legal task per debt | Sal, **waiting for Karam's review** (PR #10) |
+| `0006_auth.sql` | Staff login: `auth` schema (passwords, sessions, reset and invitation links) reached only through `SECURITY DEFINER` functions; one account per email | Sal, **waiting for Karam's review** |
+| `0007_notification_details.sql` | `app.notifications.data` (jsonb): the facts a notification is built from, so the dashboard shows it in Arabic or English | Sal, **waiting for Karam's review** |
 
 Other files in `/db`: `db/roles/login_roles.sql` and `db/roles/check_login_roles.sql` (login roles for development and production, see "Setting up a new database"), written by Sal and reviewed by Karam.
 
@@ -73,7 +75,11 @@ Other files in `/db`: `db/roles/login_roles.sql` and `db/roles/check_login_roles
 
 - Every query that touches client data goes through `withTenant(pool, ctx, fn)` in `api/src/db.ts`. It opens a transaction and sets `app.client_id`, `app.user_id` and `app.actor_type` with `set_config(..., true)`. Never query client tables outside it.
 - The API connects as `talos_api` (member of `talos_app`). `assertRlsEnforced` stops the server from starting with a superuser or an RLS-bypassing role. Do not remove it.
-- Login is a development placeholder (`AUTH_MODE=dev`, headers `x-client-id` and `x-user-id`), checked against `app.users` under RLS. It is refused in production.
+- **Login (step 4.2)** lives in `api/src/login/`: email and password, an HttpOnly `talos_session` cookie, forgot and reset password by email, invitations. Passwords are hashed with scrypt in the API; tokens are stored only as SHA-256 digests in the `auth` schema (0006), which the API reaches only through its functions. Every request that changes something with the cookie must send `x-talos: 1` (cross-site request forgery). After 8 wrong passwords the account waits 15 minutes; logins are limited per address. Reset links last 1 hour and invitations 72 hours, each works once and ends every other session of that person. Removing someone's access ends their sessions at once.
+- `AUTH_MODE=dev` also accepts the development headers (`x-client-id`, `x-user-id`), checked against `app.users` under RLS. It is refused in production; production also needs `APP_URL` on https and `MAIL_DRIVER=smtp`.
+- Emails go through the `Mailer` interface (`api/src/login/mailer.ts`): written to `api/.data/mail` in development, SMTP in production. Bilingual, Arabic first.
+- Notifications store their facts in `data` with an `event` (for example `receipt`, `dispute`, `legal_ready`, `summary`); the dashboard builds the text in the reader's language. `title` stays as an English fallback. Any new notification sets `data.event`.
+- The database pools log and drop an idle connection the server closes (restart, failover); never remove that listener, or the process stops.
 - Role checks use `requireRole` in `api/src/auth.ts`. Viewers can only read.
 - Money stays a string end to end (`pg` returns `numeric` as text). Never convert amounts to JavaScript numbers.
 - Validate params, query and body with zod (`parseOr400`). Return 404, not 403, for another client's records, so their existence is not revealed.
@@ -100,6 +106,17 @@ Other files in `/db`: `db/roles/login_roles.sql` and `db/roles/check_login_roles
 - **Legal:** after `max_attempts` reminders and one more interval with no reply, the debt becomes `legal_ready` and the client is told. A reply after the last reminder goes to a person instead, and is not tried again until there is new contact.
 - **Failures:** a temporary Meta error is retried (15, then 30 minutes, 3 tries in total); other failures fail the task and tell staff, and the debt is not planned again for a day.
 - **Times the scheduler writes come from its own clock** (`deps.now`), so its later comparisons use the same clock. Tests use a fixed clock.
+
+### Dashboard and CRM (Phase 4, `/web`)
+
+- **One data interface, two sources.** Screens read and act only through `DataSource` (`web/src/api/source.ts`): `http.ts` is the real API, `demo.ts` is sample data for the design prototype and screen tests. Add a new call to both.
+- **Money stays text** in the browser too: amounts are added and compared as whole halalas with BigInt (`web/src/lib/money.ts`), and typed amounts are cleaned to `"1250.50"` (`cleanAmount`). Never `Number()` an amount.
+- **Every text in both languages.** Keys live in `web/src/i18n/en.ts` and `ar.ts` (the compiler and a test check they match, with the same placeholders). Arabic plurals use all six forms. Western digits in Arabic, as Sal decided. No em dashes.
+- **Right to left for free:** CSS uses logical properties only (`inline-start`, `margin-inline-end`...). Mixed text (phone numbers, IDs, references) goes in `<bdi dir="ltr">`.
+- **Look:** tokens in `web/src/styles/tokens.css`. Navy frame, emerald for money recovered (the brand `#0E9F6E`) and actions (`--action`, the darker `#0B7F58`, so white text passes 5:1), magenta only for wayfinding and legal. Light and dark (the toggle, or the device setting).
+- **Roles in the screens follow the API:** viewers see no buttons that change anything (`useCanEdit`); only owners and admins change rules and the team; admins cannot touch owners. The API checks again, always.
+- **API refusals in plain words:** `errorText` (`components/ui.tsx`) turns known codes into both languages; otherwise it shows the API's message, which names the field or rule.
+- **Tests:** `npm test` (screen tests with sample data, English and Arabic) and `npm run e2e` (a real browser against the real API and a fresh dev database: every page in both languages, light and dark, desktop and phone, with accessibility checks, and every action checked through the API). Both run in CI. Add to them with every screen or action.
 
 ### Getting data in (Phase 3)
 
@@ -150,15 +167,17 @@ This is the full list of steps to build the product. Finished steps are ticked a
 
 Owner: **S** = Sal (API, worker, web, AI), **K** = Karam (database, infrastructure, accounts), **S+K** = together.
 
-### Where things stand (last updated 8 November 2026)
+### Where things stand (last updated 9 November 2026)
 
 - Merged: the database, the back end API, WhatsApp reminders out, and the WhatsApp agent that reads replies and answers them.
 - Phase 2 (the scheduler) is built: automatic reminders (or staff-approved ones), promise checks, the legal-ready step and a daily summary. Tested with a fake WhatsApp sender only. Its migration `0005_scheduler.sql` is in Karam's area and waits for his review.
 - Phase 3 (getting data in) is built on the API side: manual entry, Excel import with a check report, document upload and the enforceability summary. The screens for them come in Phase 4. Files are stored locally in development; the Dammam bucket is set up with step 6.1 (3.3b).
 - Not tested with the real services yet: everything Meta and Gemini related is tested with fakes only. The first real run is step 1.9.
-- Nothing is hosted yet. There is no production database and no user login (only the development headers).
+- Phase 4 (the dashboard and CRM) is built and tested: login with email and password, overview, debtors, debtor page with documents, approvals, legal list, notifications, Excel import, adding debtors, settings and team, in Arabic and English, light and dark, phone and desktop. Its migrations `0006_auth.sql` and `0007_notification_details.sql` wait for Karam's review.
+- Nothing is hosted yet. There is no production database and no email sending set up (SMTP), so password emails are only written to a folder in development.
 - The database setup is ready for a managed database (no superuser needed): the migrations, then one script. It was tested on a simulated one; see "Setting up a new database".
-- Planned but not started: the design system and designs for every page (4.0), the website, subscriptions and billing (Phase 7), and the Najiz filing flow (5.4, waiting for Sal's screen recording of the steps).
+- Planned but not started: the usability check with a pilot client (4.0c), the website, subscriptions and billing (Phase 7), and the legal screens and Najiz filing flow (Phase 5; 5.4 waits for Sal's screen recording of the steps). The dashboard already has a Legal page listing debts ready for legal, where Phase 5 adds the filing.
+- For Karam: the Excel import cannot read a workbook whose cell comments were saved by some tools (openpyxl, found by the end-to-end run); files saved by Excel are fine. `exceljs` fails on them in `api/src/import/parse.ts`.
 - Open decision: should the agent reply outside working hours (`AGENT_REPLY_OUTSIDE_HOURS`)? Today the reply is held and staff are alerted.
 
 ### Pick up here
@@ -231,19 +250,20 @@ Run these in order, as the admin account the provider gives you (it does not nee
 
 Design comes first: every page is designed and approved by Sal before it is built (4.0). The bar is a product that looks and feels premium, is easy for busy staff, and works equally well in Arabic (right to left) and English, on phone and desktop.
 
-- [ ] 4.0a Design system: brand colours, Arabic and English fonts, spacing, components (tables, forms, status badges, charts), light and dark, right to left from the start (S)
-- [ ] 4.0b Designs for every page (dashboard, debtor list, debtor page, approvals, notifications, settings, import, onboarding) approved before building; clickable prototype for the main flows (S)
+- [x] ~~4.0a Design system: brand colours, Arabic and English fonts, spacing, components (tables, forms, status badges, charts), light and dark, right to left from the start (S)~~ (`web/src/styles/`, `web/src/components/`)
+- [ ] 4.0b Designs for every page (dashboard, debtor list, debtor page, approvals, notifications, settings, import, onboarding) approved before building; clickable prototype for the main flows (S). Done for every dashboard page (approved by Sal; prototype: `npm run build:prototype`); onboarding comes with 7.5
 - [ ] 4.0c Usability check with two or three people from a pilot client before launch (S)
 
-- [ ] 4.1 React app shell, Arabic (right to left) and English (S)
-- [ ] 4.2 Real login for client staff, replacing the development headers (S+K)
-- [ ] 4.3 Main numbers: owed, recovered, promised, disputed, in legal, enforceable share (S)
-- [ ] 4.4 Debtor list with filters and search (S)
-- [ ] 4.5 Debtor page with full timeline: messages, promises, payments, disputes, documents (S)
-- [ ] 4.6 Approval queue: approve or reject payments, resolve disputes (S)
-- [ ] 4.7 Notifications: replies, payments to approve, disputes, legal-ready debts (S)
-- [ ] 4.8 Settings: follow-up rules, working hours, languages, templates, users and roles (S)
-- [ ] 4.9 Client sign-up and onboarding: see 7.3 (S)
+- [x] ~~4.1 React app shell, Arabic (right to left) and English (S)~~ (`web/`)
+- [x] ~~4.2 Real login for client staff: email and password, forgot and reset password by email, invitations (S, migration 0006 for K to review)~~ (`api/src/login/`, `web/src/pages/Auth.tsx`)
+- [x] ~~4.3 Main numbers: owed, recovered, promised, disputed, in legal, enforceable share (S)~~ (`web/src/pages/Overview.tsx`, `/api/dashboard/summary`)
+- [x] ~~4.4 Debtor list with filters and search, add a debtor, import from Excel (S)~~ (`web/src/pages/Debtors.tsx`, `AddDebtor.tsx`, `Import.tsx`)
+- [x] ~~4.5 Debtor page with full timeline: messages, promises, payments, disputes, documents; send a reminder, record a payment, pause and resume (S)~~ (`web/src/pages/Debtor.tsx`)
+- [x] ~~4.6 Approval queue: approve or reject payments, resolve disputes, approve waiting reminders (S)~~ (`web/src/pages/Approvals.tsx`, `/api/disputes/:id/resolve`)
+- [x] ~~4.7 Notifications: replies, payments to approve, disputes, legal-ready debts, in the reader's language (S, migration 0007)~~ (`web/src/pages/Notifications.tsx`)
+- [x] ~~4.8 Settings: follow-up rules, working hours and days, templates, team and roles (S)~~ (`web/src/pages/Settings.tsx`, `/api/settings/rules`, `/api/users`)
+- [ ] 4.9 Client sign-up and onboarding: see 7.5 (S)
+- [ ] 4.10 Serve the dashboard and the API from one address in production, so the login cookie stays first-party (K, with 6.4)
 
 ### Phase 5: Legal escalation
 
