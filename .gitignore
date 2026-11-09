@@ -9,3 +9,4 @@ build/
 .replit.local
 coverage/
 .data/
+dist-prototype/

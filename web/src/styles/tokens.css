@@ -1,0 +1,154 @@
+/*
+ * Talos design tokens.
+ *
+ * Brand: Deep Navy #121B33 frames the product, Emerald #0E9F6E marks money
+ * recovered and the main action, Magenta #B04ACD is a quiet wayfinding
+ * accent only (current page, legal steps), never dominant.
+ *
+ * Every page uses logical properties (inline-start / inline-end), so the
+ * same CSS works left to right in English and right to left in Arabic.
+ */
+
+:root {
+  /* Brand */
+  --navy-950: #0b1124;
+  --navy-900: #121b33;
+  --navy-800: #1b2747;
+  --navy-700: #283658;
+  --navy-500: #56628a;
+  --navy-300: #a3acc6;
+  --navy-100: #e4e8f2;
+
+  --emerald-800: #086447;
+  --emerald-700: #0b7f58;
+  --emerald-600: #0e9f6e;
+  --emerald-400: #4cc79a;
+  --emerald-100: #d6f2e7;
+  --emerald-50: #ecf8f3;
+
+  --magenta-600: #9a3bb5;
+  --magenta-500: #b04acd;
+  --magenta-100: #f3e3f8;
+
+  /* Status (debt life cycle) */
+  --amber-700: #8a5a00;
+  --amber-500: #c98a0b;
+  --amber-100: #fbefd5;
+  --red-700: #a32630;
+  --red-500: #cf3a44;
+  --red-100: #fbe4e5;
+  --slate-600: #5b6784;
+  --slate-100: #eceff5;
+
+  /* Surfaces and ink (light) */
+  --canvas: #f2f4f8;
+  --panel: #ffffff;
+  --panel-raised: #ffffff;
+  --panel-sunken: #f7f8fb;
+  --line: #e2e6ee;
+  --line-strong: #cdd3df;
+  --ink: #121b33;
+  --ink-2: #47516b;
+  --ink-3: #7a8399;
+  --ink-inverse: #ffffff;
+  --focus: #0e9f6e;
+  --accent: var(--emerald-600);
+  --accent-ink: var(--emerald-700);
+  --accent-soft: var(--emerald-50);
+  --shadow-1: 0 1px 2px rgba(18, 27, 51, 0.06), 0 1px 1px rgba(18, 27, 51, 0.04);
+  --shadow-2: 0 10px 30px -12px rgba(18, 27, 51, 0.22), 0 2px 6px rgba(18, 27, 51, 0.06);
+
+  /* Type */
+  --font-display: 'Space Grotesk', 'IBM Plex Sans Arabic', system-ui, sans-serif;
+  --font-body: 'IBM Plex Sans', 'IBM Plex Sans Arabic', system-ui, sans-serif;
+  --font-code: 'IBM Plex Mono', ui-monospace, monospace;
+
+  --text-xs: 0.75rem;
+  --text-sm: 0.8125rem;
+  --text-md: 0.9375rem;
+  --text-lg: 1.0625rem;
+  --text-xl: 1.375rem;
+  --text-2xl: 1.875rem;
+  --text-3xl: 2.75rem;
+
+  /* Space and shape: corners get smaller as things get smaller */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+  --space-7: 48px;
+  --radius-lg: 18px;
+  --radius-md: 12px;
+  --radius-sm: 8px;
+  --radius-pill: 999px;
+
+  --sidebar: 248px;
+  --ease: cubic-bezier(0.2, 0.7, 0.2, 1);
+}
+
+/* Arabic: Plex Sans Arabic leads everywhere, figures keep Space Grotesk digits. */
+:root[lang='ar'] {
+  --font-display: 'IBM Plex Sans Arabic', 'Space Grotesk', system-ui, sans-serif;
+  --font-body: 'IBM Plex Sans Arabic', 'IBM Plex Sans', system-ui, sans-serif;
+  --font-figures: 'Space Grotesk', 'IBM Plex Sans Arabic', sans-serif;
+}
+
+:root {
+  --font-figures: 'Space Grotesk', 'IBM Plex Sans', sans-serif;
+}
+
+/* Dark: the navy frame becomes the whole room. */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    --canvas: #0b1124;
+    --panel: #121b33;
+    --panel-raised: #18233f;
+    --panel-sunken: #0f1730;
+    --line: #23304f;
+    --line-strong: #33426a;
+    --ink: #eef1f8;
+    --ink-2: #b3bbd2;
+    --ink-3: #8089a6;
+    --accent: #2cb886;
+    --accent-ink: #4cc79a;
+    --accent-soft: rgba(14, 159, 110, 0.14);
+    --amber-100: rgba(201, 138, 11, 0.16);
+    --amber-700: #e3b24a;
+    --red-100: rgba(207, 58, 68, 0.16);
+    --red-700: #f08088;
+    --slate-100: rgba(163, 172, 198, 0.12);
+    --slate-600: #a3acc6;
+    --emerald-50: rgba(14, 159, 110, 0.12);
+    --emerald-100: rgba(14, 159, 110, 0.22);
+    --magenta-100: rgba(176, 74, 205, 0.18);
+    --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.4);
+    --shadow-2: 0 14px 34px -14px rgba(0, 0, 0, 0.7);
+  }
+}
+:root[data-theme='dark'] {
+  --canvas: #0b1124;
+  --panel: #121b33;
+  --panel-raised: #18233f;
+  --panel-sunken: #0f1730;
+  --line: #23304f;
+  --line-strong: #33426a;
+  --ink: #eef1f8;
+  --ink-2: #b3bbd2;
+  --ink-3: #8089a6;
+  --accent: #2cb886;
+  --accent-ink: #4cc79a;
+  --accent-soft: rgba(14, 159, 110, 0.14);
+  --amber-100: rgba(201, 138, 11, 0.16);
+  --amber-700: #e3b24a;
+  --red-100: rgba(207, 58, 68, 0.16);
+  --red-700: #f08088;
+  --slate-100: rgba(163, 172, 198, 0.12);
+  --slate-600: #a3acc6;
+  --emerald-50: rgba(14, 159, 110, 0.12);
+  --emerald-100: rgba(14, 159, 110, 0.22);
+  --magenta-100: rgba(176, 74, 205, 0.18);
+  --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --shadow-2: 0 14px 34px -14px rgba(0, 0, 0, 0.7);
+}
