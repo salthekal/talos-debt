@@ -49,9 +49,12 @@
   --line-strong: #cdd3df;
   --ink: #121b33;
   --ink-2: #47516b;
-  --ink-3: #7a8399;
+  --ink-3: #646d84; /* 4.5:1 or better on every light surface */
   --ink-inverse: #ffffff;
   --focus: #0e9f6e;
+  /* Buttons and counts with white text: the darker emerald keeps 5:1 contrast in both themes. */
+  --action: #0b7f58;
+  --action-hover: #086447;
   --accent: var(--emerald-600);
   --accent-ink: var(--emerald-700);
   --accent-soft: var(--emerald-50);
@@ -110,7 +113,7 @@
     --line-strong: #33426a;
     --ink: #eef1f8;
     --ink-2: #b3bbd2;
-    --ink-3: #8089a6;
+    --ink-3: #8f98b3;
     --accent: #2cb886;
     --accent-ink: #4cc79a;
     --accent-soft: rgba(14, 159, 110, 0.14);
@@ -121,6 +124,8 @@
     --slate-100: rgba(163, 172, 198, 0.12);
     --slate-600: #a3acc6;
     --emerald-50: rgba(14, 159, 110, 0.12);
+    --emerald-700: #4cc79a;
+    --magenta-600: #d896ea;
     --emerald-100: rgba(14, 159, 110, 0.22);
     --magenta-100: rgba(176, 74, 205, 0.18);
     --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.4);
@@ -136,7 +141,7 @@
   --line-strong: #33426a;
   --ink: #eef1f8;
   --ink-2: #b3bbd2;
-  --ink-3: #8089a6;
+  --ink-3: #8f98b3;
   --accent: #2cb886;
   --accent-ink: #4cc79a;
   --accent-soft: rgba(14, 159, 110, 0.14);
@@ -147,6 +152,8 @@
   --slate-100: rgba(163, 172, 198, 0.12);
   --slate-600: #a3acc6;
   --emerald-50: rgba(14, 159, 110, 0.12);
+  --emerald-700: #4cc79a;
+  --magenta-600: #d896ea;
   --emerald-100: rgba(14, 159, 110, 0.22);
   --magenta-100: rgba(176, 74, 205, 0.18);
   --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.4);

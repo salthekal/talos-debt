@@ -1,6 +1,11 @@
-import { ArrowLeft, Bot, Check, CheckCheck, Clock, CreditCard, Handshake, MessageSquareWarning, PauseCircle, Phone as PhoneIcon, Send, ShieldCheck, ShieldOff, X } from 'lucide-react';
+import { ArrowLeft, Bot, Check, CheckCheck, Clock, CreditCard, Handshake, MessageSquareWarning, PauseCircle, Phone as PhoneIcon, PlayCircle, Send, ShieldCheck, ShieldOff, X } from 'lucide-react';
+import { useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import { useDebtor, useRules } from '../api/hooks';
+import { useDebtor, useResumeDebt, useRules } from '../api/hooks';
+import { ApiError } from '../api/source';
+import { PauseDialog, RecordPaymentDialog, SendReminderDialog, canPause, canPay, canRemind, useCanEdit } from '../components/actions';
+import { Documents } from '../components/Documents';
+import { errorText, useToast } from '../components/ui';
 import type { DebtRow, Phone, TimelineEvent } from '../api/types';
 import { Empty, ErrorState, Initials, Loading, Money, PaidBar, ReminderDots, StatusBadge } from '../components/bits';
 import { useI18n, type MessageKey } from '../i18n';
@@ -27,9 +32,12 @@ export function DebtorPage() {
   const detail = useDebtor(id);
   const rules = useRules();
   const max = rules.data?.max_attempts ?? 5;
+  const canEdit = useCanEdit();
+  const [dialog, setDialog] = useState<'remind' | 'pause' | 'pay' | null>(null);
 
   if (detail.isError) {
-    return (detail.error as Error)?.message === 'not_found' ? <NotFound /> : <div className="page"><ErrorState onRetry={() => detail.refetch()} /></div>;
+    const e = detail.error;
+    return (e instanceof ApiError && e.status === 404) || (e as Error)?.message === 'not_found' ? <NotFound /> : <div className="page"><ErrorState onRetry={() => detail.refetch()} /></div>;
   }
   if (!detail.data) {
     return (
@@ -40,6 +48,9 @@ export function DebtorPage() {
   }
   const { debtor, phones, debts, timeline } = detail.data;
   const debtRef = new Map(debts.map((d) => [d.debt_id, d.ref_code]));
+  const remindable = debts.filter(canRemind);
+  const pausable = debts.filter(canPause);
+  const payable = debts.filter(canPay);
 
   return (
     <div className="page debtor">
@@ -60,7 +71,9 @@ export function DebtorPage() {
           <dl className="facts">
             <div>
               <dt>{t('debtor.id')}</dt>
-              <dd className="code">{maskId(debtor.id_number)}</dd>
+              <dd className="code">
+                <bdi dir="ltr">{maskId(debtor.id_number)}</bdi>
+              </dd>
             </div>
             <div>
               <dt>{t('debtor.nationality')}</dt>
@@ -72,20 +85,28 @@ export function DebtorPage() {
             </div>
           </dl>
         </div>
-        <div className="page-actions">
-          <button type="button" className="btn btn-quiet">
-            <PauseCircle size={17} aria-hidden="true" />
-            {t('debtor.pause')}
-          </button>
-          <button type="button" className="btn btn-quiet">
-            <CreditCard size={17} aria-hidden="true" />
-            {t('debtor.recordPayment')}
-          </button>
-          <button type="button" className="btn btn-primary">
-            <Send size={17} aria-hidden="true" className="flip-rtl" />
-            {t('debtor.sendReminder')}
-          </button>
-        </div>
+        {canEdit && (
+          <div className="page-actions">
+            {pausable.length > 0 && (
+              <button type="button" className="btn btn-quiet" onClick={() => setDialog('pause')}>
+                <PauseCircle size={17} aria-hidden="true" />
+                {t('debtor.pause')}
+              </button>
+            )}
+            {payable.length > 0 && (
+              <button type="button" className="btn btn-quiet" onClick={() => setDialog('pay')}>
+                <CreditCard size={17} aria-hidden="true" />
+                {t('debtor.recordPayment')}
+              </button>
+            )}
+            {remindable.length > 0 && (
+              <button type="button" className="btn btn-primary" onClick={() => setDialog('remind')}>
+                <Send size={17} aria-hidden="true" className="flip-rtl" />
+                {t('debtor.sendReminder')}
+              </button>
+            )}
+          </div>
+        )}
       </header>
 
       <div className="debtor-grid">
@@ -95,7 +116,7 @@ export function DebtorPage() {
               {t('debtor.debts')}
             </h2>
             {debts.map((d) => (
-              <DebtCard key={d.debt_id} debt={d} max={max} />
+              <DebtCard key={d.debt_id} debt={d} max={max} canEdit={canEdit} />
             ))}
           </section>
           <section className="panel phones" aria-labelledby="phones-title">
@@ -108,6 +129,7 @@ export function DebtorPage() {
               ))}
             </ul>
           </section>
+          <Documents debtorId={debtor.id} name={debtor.full_name} debts={debts} />
         </aside>
 
         <section className="panel journey" aria-labelledby="journey-title">
@@ -117,12 +139,17 @@ export function DebtorPage() {
           {timeline.length === 0 ? <Empty>{t('debtor.journeyEmpty')}</Empty> : <Timeline events={timeline} refs={debtRef} showRefs={debts.length > 1} />}
         </section>
       </div>
+      {dialog === 'remind' && <SendReminderDialog open onClose={() => setDialog(null)} name={debtor.full_name} debts={remindable} />}
+      {dialog === 'pause' && <PauseDialog open onClose={() => setDialog(null)} debts={pausable} />}
+      {dialog === 'pay' && <RecordPaymentDialog open onClose={() => setDialog(null)} debts={payable} />}
     </div>
   );
 }
 
-function DebtCard({ debt, max }: { debt: DebtRow; max: number }) {
+function DebtCard({ debt, max, canEdit }: { debt: DebtRow; max: number; canEdit: boolean }) {
   const { t } = useI18n();
+  const resume = useResumeDebt();
+  const toast = useToast();
   const paid = share(subtract(debt.amount_original, debt.amount_outstanding), debt.amount_original);
   return (
     <article className="debt-card">
@@ -152,6 +179,22 @@ function DebtCard({ debt, max }: { debt: DebtRow; max: number }) {
           </dd>
         </div>
       </dl>
+      {canEdit && debt.status === 'paused' && (
+        <button
+          type="button"
+          className="btn btn-quiet btn-small"
+          disabled={resume.isPending}
+          onClick={() =>
+            resume.mutate(debt.debt_id, {
+              onSuccess: () => toast(t('action.resume.done', { ref: debt.ref_code })),
+              onError: (err) => toast(errorText(err, t), 'error'),
+            })
+          }
+        >
+          <PlayCircle size={16} aria-hidden="true" />
+          {t('action.resume')}
+        </button>
+      )}
     </article>
   );
 }

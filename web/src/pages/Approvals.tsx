@@ -1,9 +1,11 @@
 import { Check, FileImage, HandCoins, MessageSquareWarning, Send, X } from 'lucide-react';
 import { useState, type KeyboardEvent } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { useApprovals, useApproveReminders, useRules, useWaitingReminders } from '../api/hooks';
+import { useApprovals, useApprovePayment, useApproveReminders, useRules, useSource, useWaitingReminders } from '../api/hooks';
 import type { DisputeToReview, PaymentToReview } from '../api/types';
+import { DisputeDialog, RejectPaymentDialog, useCanEdit } from '../components/actions';
 import { Empty, ErrorState, Loading, Money, ReminderDots } from '../components/bits';
+import { errorText, useToast } from '../components/ui';
 import { useI18n, type MessageKey } from '../i18n';
 import { groupDigits, subtract, toHalalas } from '../lib/money';
 
@@ -17,6 +19,8 @@ export function ApprovalsPage() {
   const navigate = useNavigate();
   const approvals = useApprovals();
   const waiting = useWaitingReminders();
+  const [rejecting, setRejecting] = useState<PaymentToReview | null>(null);
+  const [deciding, setDeciding] = useState<{ d: DisputeToReview; v: 'amount_correct' | 'debtor_right' } | null>(null);
   const counts: Record<Tab, number | undefined> = {
     payments: approvals.data?.payments.length,
     disputes: approvals.data?.disputes.length,
@@ -75,22 +79,29 @@ export function ApprovalsPage() {
           <Loading rows={5} />
         ) : tab === 'payments' ? (
           approvals.data.payments.length ? (
-            <ul className="review-list">{approvals.data.payments.map((p) => <PaymentReview key={p.id} p={p} />)}</ul>
+            <ul className="review-list">{approvals.data.payments.map((p) => <PaymentReview key={p.id} p={p} onReject={setRejecting} />)}</ul>
           ) : (
             <Empty>{t('approvals.empty.payments')}</Empty>
           )
         ) : approvals.data.disputes.length ? (
-          <ul className="review-list">{approvals.data.disputes.map((d) => <DisputeReview key={d.id} d={d} />)}</ul>
+          <ul className="review-list">{approvals.data.disputes.map((d) => <DisputeReview key={d.id} d={d} onDecide={(x, v) => setDeciding({ d: x, v })} />)}</ul>
         ) : (
           <Empty>{t('approvals.empty.disputes')}</Empty>
         )}
       </div>
+      <RejectPaymentDialog payment={rejecting} onClose={() => setRejecting(null)} />
+      <DisputeDialog key={deciding?.d.id ?? 'none'} dispute={deciding?.d ?? null} verdict={deciding?.v ?? 'amount_correct'} onClose={() => setDeciding(null)} />
     </div>
   );
 }
 
-function PaymentReview({ p }: { p: PaymentToReview }) {
+function PaymentReview({ p, onReject }: { p: PaymentToReview; onReject: (p: PaymentToReview) => void }) {
   const { t, formatDate, relative } = useI18n();
+  const source = useSource();
+  const canEdit = useCanEdit();
+  const approve = useApprovePayment();
+  const toast = useToast();
+  const receiptUrl = p.proof_document_id && !source.demo ? `/api/documents/${p.proof_document_id}/download` : null;
   const left = subtract(p.amount_outstanding, p.amount);
   const clears = toHalalas(left) <= 0n;
   const confidence = p.ai_match_confidence ? Math.round(Number(p.ai_match_confidence) * 100) : null;
@@ -150,24 +161,44 @@ function PaymentReview({ p }: { p: PaymentToReview }) {
         )}
       </div>
       <div className="review-actions">
-        <button type="button" className="btn btn-primary">
-          <Check size={17} aria-hidden="true" />
-          {t('approvals.approve')}
-        </button>
-        <button type="button" className="btn btn-quiet">
-          <X size={17} aria-hidden="true" />
-          {t('approvals.reject')}
-        </button>
-        <button type="button" className="btn btn-link">
-          {t('approvals.viewReceipt')}
-        </button>
+        {canEdit && (
+          <>
+            <button
+              type="button"
+              className="btn btn-primary"
+              disabled={approve.isPending}
+              aria-busy={approve.isPending}
+              onClick={() =>
+                // mutateAsync, not mutate: this card leaves the list on success, and
+                // mutate's own callbacks do not run once the component is gone.
+                approve.mutateAsync(p.id).then(
+                  () => toast(t('approvals.approved')),
+                  (err) => toast(errorText(err, t), 'error'),
+                )
+              }
+            >
+              <Check size={17} aria-hidden="true" />
+              {t('approvals.approve')}
+            </button>
+            <button type="button" className="btn btn-quiet" onClick={() => onReject(p)}>
+              <X size={17} aria-hidden="true" />
+              {t('approvals.reject')}
+            </button>
+          </>
+        )}
+        {receiptUrl && (
+          <a className="btn btn-link" href={receiptUrl} target="_blank" rel="noopener noreferrer">
+            {t('approvals.viewReceipt')}
+          </a>
+        )}
       </div>
     </li>
   );
 }
 
-function DisputeReview({ d }: { d: DisputeToReview }) {
+function DisputeReview({ d, onDecide }: { d: DisputeToReview; onDecide: (d: DisputeToReview, v: 'amount_correct' | 'debtor_right') => void }) {
   const { t, relative } = useI18n();
+  const canEdit = useCanEdit();
   return (
     <li className="review panel review-dispute">
       <div className="review-body">
@@ -186,10 +217,16 @@ function DisputeReview({ d }: { d: DisputeToReview }) {
           <blockquote dir="auto">{d.reason}</blockquote>
         </figure>
       </div>
-      <div className="review-actions">
-        <button type="button" className="btn btn-quiet">{t('approvals.dispute.resolveValid')}</button>
-        <button type="button" className="btn btn-primary">{t('approvals.dispute.resolveInvalid')}</button>
-      </div>
+      {canEdit && (
+        <div className="review-actions">
+          <button type="button" className="btn btn-quiet" onClick={() => onDecide(d, 'debtor_right')}>
+            {t('approvals.dispute.resolveValid')}
+          </button>
+          <button type="button" className="btn btn-primary" onClick={() => onDecide(d, 'amount_correct')}>
+            {t('approvals.dispute.resolveInvalid')}
+          </button>
+        </div>
+      )}
     </li>
   );
 }
@@ -198,6 +235,9 @@ function Reminders() {
   const { t, relative } = useI18n();
   const waiting = useWaitingReminders();
   const approve = useApproveReminders();
+  const canEdit = useCanEdit();
+  const toast = useToast();
+  const done = { onSuccess: (r: { approved: number }) => { setPicked(new Set()); toast(t('approvals.reminders.approved', { count: r.approved })); }, onError: (err: unknown) => toast(errorText(err, t), 'error') };
   const rules = useRules();
   const max = rules.data?.max_attempts ?? 5;
   const [picked, setPicked] = useState<Set<string>>(new Set());
@@ -219,29 +259,29 @@ function Reminders() {
   return (
     <section className="panel reminders">
       <p className="reminders-lead">{t('approvals.reminders.lead')}</p>
-      <div className="bulk">
+      {canEdit && <div className="bulk">
         <label className="check">
           <input type="checkbox" checked={allPicked} onChange={() => setPicked(allPicked ? new Set() : new Set(list.map((r) => r.task_id)))} />
           <span>{t('approvals.selectAll')}</span>
         </label>
         <div className="bulk-actions">
           {picked.size > 0 && !allPicked && (
-            <button type="button" className="btn btn-primary" disabled={approve.isPending} onClick={() => approve.mutate([...picked], { onSuccess: () => setPicked(new Set()) })}>
+            <button type="button" className="btn btn-primary" disabled={approve.isPending} onClick={() => approve.mutate([...picked], done)}>
               {t('approvals.reminders.approveSelected', { count: picked.size })}
             </button>
           )}
-          <button type="button" className={`btn ${picked.size && !allPicked ? 'btn-quiet' : 'btn-primary'}`} disabled={approve.isPending} onClick={() => approve.mutate('all', { onSuccess: () => setPicked(new Set()) })}>
+          <button type="button" className={`btn ${picked.size && !allPicked ? 'btn-quiet' : 'btn-primary'}`} disabled={approve.isPending} onClick={() => approve.mutate('all', done)}>
             <Send size={16} aria-hidden="true" className="flip-rtl" />
             {t('approvals.reminders.approveAll')}
           </button>
         </div>
-      </div>
+      </div>}
       <ul className="rem-list">
         {list.map((r) => (
           <li key={r.task_id} className={picked.has(r.task_id) ? 'rem rem-picked' : 'rem'}>
-            <label className="check">
+            {canEdit && <label className="check">
               <input type="checkbox" checked={picked.has(r.task_id)} onChange={() => toggle(r.task_id)} aria-label={t('approvals.select', { name: r.full_name })} />
-            </label>
+            </label>}
             <span className="rem-who">
               <Link to={`/debtors/${r.debtor_id}`} className="row-title">
                 {r.full_name}

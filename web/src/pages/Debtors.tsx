@@ -1,10 +1,11 @@
 import { ChevronLeft, ChevronRight, FileSpreadsheet, ShieldCheck, ShieldOff, UserPlus } from 'lucide-react';
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
-import { useDebts, useRules, useStatusCounts } from '../api/hooks';
+import { useDebts, useMe, useRules, useSummary } from '../api/hooks';
 import { DEBT_STATUSES, type DebtStatus } from '../api/types';
 import { Empty, ErrorState, Initials, Loading, Money, PaidBar, ReminderDots, StatusBadge } from '../components/bits';
 import { useI18n } from '../i18n';
+import { AddDebtorDialog } from './AddDebtor';
 import { share, subtract } from '../lib/money';
 
 const PAGE = 25;
@@ -22,10 +23,15 @@ export function DebtorsPage() {
 
   const query = useMemo(() => ({ status, search, limit: PAGE, offset }), [status, search, offset]);
   const debts = useDebts(query);
-  const counts = useStatusCounts();
+  const summary = useSummary();
   const rules = useRules();
+  const me = useMe();
+  const canEdit = me.data?.user.role !== 'viewer';
+  const [adding, setAdding] = useState(false);
   const max = rules.data?.max_attempts ?? 5;
-  const all = Object.values(counts.data ?? {}).reduce((a, b) => a + (b ?? 0), 0);
+  const statuses = summary.data?.statuses ?? {};
+  const countOf = (s: DebtStatus) => statuses[s]?.count ?? 0;
+  const all = Object.values(statuses).reduce((a, b) => a + (b?.count ?? 0), 0);
 
   const setFilter = (s?: DebtStatus) => {
     const next = new URLSearchParams(params);
@@ -48,14 +54,18 @@ export function DebtorsPage() {
           {debts.data && <p className="page-sub">{t('debtors.count', { count: debts.data.total })}</p>}
         </div>
         <div className="page-actions">
-          <Link to="/import" className="btn btn-quiet">
-            <FileSpreadsheet size={17} aria-hidden="true" />
-            {t('debtors.import')}
-          </Link>
-          <button type="button" className="btn btn-primary">
-            <UserPlus size={17} aria-hidden="true" />
-            {t('debtors.add')}
-          </button>
+          {canEdit && (
+            <>
+              <Link to="/import" className="btn btn-quiet">
+                <FileSpreadsheet size={17} aria-hidden="true" />
+                {t('debtors.import')}
+              </Link>
+              <button type="button" className="btn btn-primary" onClick={() => setAdding(true)}>
+                <UserPlus size={17} aria-hidden="true" />
+                {t('debtors.add')}
+              </button>
+            </>
+          )}
         </div>
       </header>
 
@@ -64,10 +74,10 @@ export function DebtorsPage() {
           {t('debtors.all')}
           <span className="chip-count">{all}</span>
         </button>
-        {FILTERS.filter((s) => counts.data?.[s]).map((s) => (
+        {FILTERS.filter((s) => countOf(s) > 0 || status === s).map((s) => (
           <button key={s} type="button" className={`chip chip-${s}`} aria-pressed={status === s} onClick={() => setFilter(s)}>
             {t(`status.${s}`)}
-            <span className="chip-count">{counts.data?.[s]}</span>
+            <span className="chip-count">{countOf(s)}</span>
           </button>
         ))}
       </div>
@@ -154,6 +164,7 @@ export function DebtorsPage() {
           </>
         )}
       </section>
+      <AddDebtorDialog open={adding} onClose={() => setAdding(false)} />
     </div>
   );
 }

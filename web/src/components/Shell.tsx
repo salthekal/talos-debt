@@ -1,7 +1,8 @@
-import { Bell, CheckCheck, FileSpreadsheet, Menu, Moon, Orbit, Search, Settings, Sun, Users, X } from 'lucide-react';
+import { Bell, CheckCheck, FileSpreadsheet, Gavel, LogOut, Menu, Moon, Orbit, Search, Settings, Sun, Users, X } from 'lucide-react';
+import { useQueryClient } from '@tanstack/react-query';
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { NavLink, Outlet, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
-import { useApprovals, useMe, useNotifications, useSource, useWaitingReminders } from '../api/hooks';
+import { useApprovals, useMe, useNotifications, useSource, useSummary, useWaitingReminders } from '../api/hooks';
 import { useI18n, type MessageKey } from '../i18n';
 import { Initials } from './bits';
 import { LogoMark, LogoWordmark } from './Logo';
@@ -38,6 +39,7 @@ const NAV: { to: string; key: MessageKey; icon: typeof Orbit; end?: boolean }[] 
   { to: '/', key: 'nav.overview', icon: Orbit, end: true },
   { to: '/debtors', key: 'nav.debtors', icon: Users },
   { to: '/approvals', key: 'nav.approvals', icon: CheckCheck },
+  { to: '/legal', key: 'nav.legal', icon: Gavel },
   { to: '/notifications', key: 'nav.notifications', icon: Bell },
   { to: '/import', key: 'nav.import', icon: FileSpreadsheet },
   { to: '/settings', key: 'nav.settings', icon: Settings },
@@ -53,6 +55,17 @@ export function Shell() {
   const waiting = useWaitingReminders();
   const notes = useNotifications();
   const source = useSource();
+  const summary = useSummary();
+  const qc = useQueryClient();
+  const navigate = useNavigate();
+  const logout = async () => {
+    try {
+      await source.logout();
+    } finally {
+      qc.clear();
+      navigate('/login', { replace: true });
+    }
+  };
   const mainRef = useRef<HTMLElement>(null);
 
   // Close the phone menu when the page changes, and move focus to the new page.
@@ -64,8 +77,8 @@ export function Shell() {
 
   const toApprove =
     (approvals.data?.payments.length ?? 0) + (approvals.data?.disputes.length ?? 0) + (waiting.data?.reminders.length ?? 0);
-  const unread = notes.data?.filter((n) => !n.read_at).length ?? 0;
-  const counts: Partial<Record<string, number>> = { '/approvals': toApprove, '/notifications': unread };
+  const unread = notes.data?.unread ?? 0;
+  const counts: Partial<Record<string, number>> = { '/approvals': toApprove, '/notifications': unread, '/legal': summary.data?.statuses.legal_ready?.count ?? 0 };
   const company = me.data?.client?.trade_name ?? me.data?.client?.legal_name ?? '';
 
   return (
@@ -104,6 +117,9 @@ export function Shell() {
                 <span className="who-name">{me.data.user.fullName}</span>
                 <span className="who-company">{company}</span>
               </span>
+              <button type="button" className="icon-btn logout" onClick={logout} aria-label={t('nav.logout')} title={t('nav.logout')}>
+                <LogOut size={17} className="flip-rtl" />
+              </button>
             </div>
           )}
         </div>

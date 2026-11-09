@@ -148,7 +148,7 @@ export interface WaitingReminders {
 
 export interface Notification {
   id: string;
-  kind: 'reply' | 'payment_to_review' | 'dispute' | 'promise_broken' | 'legal_ready' | 'system';
+  kind: 'reply' | 'payment_to_review' | 'dispute' | 'promise_broken' | 'legal_ready' | 'import_done' | 'system';
   title: string;
   target_table: string | null;
   target_id: string | null;
@@ -158,11 +158,119 @@ export interface Notification {
    * The details the text is built from, so it shows in the reader's language.
    * `title` (English, from the server) is only the fallback.
    */
-  data?: { name?: string; ref?: string; amount?: string; reminders?: number; summary?: Partial<Record<'sent' | 'replies' | 'promises' | 'payments', number>> };
+  data?: NotificationData | null;
+}
+
+/** The facts a notification is built from (API: app.notifications.data, migration 0007). */
+export interface NotificationData {
+  event?:
+    | 'receipt' | 'dispute' | 'needs_reply' | 'reply_held' | 'legal_ready' | 'replied_after_last'
+    | 'promise_broken' | 'promise_partly' | 'not_sent' | 'send_failed' | 'maybe_not_sent' | 'summary';
+  name?: string;
+  ref?: string | null;
+  amount?: string;
+  reminders?: number;
+  date?: string;
+  debtor_id?: string;
+  summary?: Partial<Record<'reminders_sent' | 'replies' | 'promises' | 'payments_to_review' | 'disputes' | 'legal_ready' | 'waiting_approval', number>>;
 }
 
 export interface FollowUpRules {
   interval_days: number;
   max_attempts: number;
+  legal_after_attempts: number;
+  promise_grace_days: number;
+  working_hours_start: string;
+  working_hours_end: string;
+  working_days: number[];
   auto_send: boolean;
+  timezone: string;
+}
+
+export interface Summary {
+  reminders_sent: number;
+  promises_open: number;
+  legal: number;
+  statuses: Partial<Record<DebtStatus, { count: number; outstanding: Money }>>;
+}
+
+export interface User {
+  id: string;
+  full_name: string;
+  email: string;
+  role: Role;
+  is_active: boolean;
+  last_login_at: string | null;
+  created_at: string;
+}
+
+export interface Template {
+  id: string;
+  purpose: string;
+  language: Language;
+  meta_template_name: string;
+  approval_status: 'draft' | 'submitted' | 'approved' | 'rejected' | 'paused';
+  body: string;
+  shared: boolean;
+}
+
+export type DocType =
+  | 'national_id' | 'iqama' | 'employment_contract' | 'promissory_note' | 'cheque' | 'judgment'
+  | 'contract' | 'invoice' | 'receipt' | 'payment_proof' | 'other';
+
+/** A stored file (api/src/routes/documents.ts). Documents are evidence, so they cannot be deleted. */
+export interface DocumentInfo {
+  id: string;
+  debtor_id: string | null;
+  debt_id: string | null;
+  doc_type: string;
+  file_name: string;
+  mime_type: string;
+  size_bytes: number | string;
+  source: string;
+  created_at: string;
+}
+
+export interface Task {
+  id: string;
+  task_type: 'send_reminder' | 'promise_check' | 'call' | 'mark_legal_ready';
+  attempt_number: number | null;
+  due_at: string;
+  status: 'pending' | 'running' | 'done' | 'skipped' | 'failed' | 'cancelled';
+  skip_reason: string | null;
+  approved_at: string | null;
+}
+
+export interface ImportIssue {
+  row: number | null;
+  column: string | null;
+  cell: string | null;
+  message: string;
+}
+
+export interface ImportReport {
+  id: string;
+  status: 'validating' | 'ready' | 'failed' | 'confirmed' | 'cancelled';
+  file_name: string;
+  rows_total: number | null;
+  rows_ok: number | null;
+  rows_failed: number | null;
+  summary: {
+    rows: number; rows_with_errors: number; debtors_new: number; debtors_existing: number; debts: number;
+    total_amount: Money; enforceable_amount: Money; instruments_new: number; instruments_reused: number; phones_new: number;
+  } | null;
+  errors: ImportIssue[] | null;
+  warnings: ImportIssue[] | null;
+  created_at: string;
+}
+
+export interface NewDebtorInput {
+  full_name: string;
+  full_name_ar?: string;
+  id_type?: 'national_id' | 'iqama' | 'passport' | 'cr';
+  id_number: string;
+  nationality?: string;
+  preferred_language: Language;
+  phones: string[];
+  debts: { amount: string; reason: string; due_date?: string; instrument?: { type: string; reference_number?: string } }[];
 }

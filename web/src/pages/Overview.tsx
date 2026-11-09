@@ -1,13 +1,13 @@
 import { ArrowUpRight, Bell, Gavel, HandCoins, MessageSquareWarning, Send, ShieldCheck, TriangleAlert } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { Link } from 'react-router-dom';
-import { useApprovals, useDebts, useMe, useNotifications, useTotals, useWaitingReminders } from '../api/hooks';
-import type { DebtRow, DebtStatus } from '../api/types';
+import { useApprovals, useMe, useNotifications, useSummary, useTotals, useWaitingReminders } from '../api/hooks';
+import type { DebtStatus, Summary } from '../api/types';
 import { ErrorState, Loading, Money, StatusBadge } from '../components/bits';
 import { RecoveryRing } from '../components/RecoveryRing';
 import { TIME_ZONE, useI18n } from '../i18n';
 import { share, sum } from '../lib/money';
-import { notificationText } from '../lib/notifications';
+import { notificationLink, notificationText } from '../lib/notifications';
 
 /** Statuses that still have money in play, in the order a debt moves through them. */
 const PIPELINE: DebtStatus[] = ['open', 'in_follow_up', 'promised', 'partly_paid', 'disputed', 'paused', 'legal_ready', 'in_legal'];
@@ -21,7 +21,7 @@ export function OverviewPage() {
   const { t, formatDate } = useI18n();
   const me = useMe();
   const totals = useTotals();
-  const debts = useDebts({ limit: 200 });
+  const summary = useSummary();
   const first = me.data?.user.fullName.split(' ')[0] ?? '';
 
   return (
@@ -39,17 +39,17 @@ export function OverviewPage() {
 
       {totals.isError ? (
         <ErrorState onRetry={() => totals.refetch()} />
-      ) : !totals.data || !debts.data ? (
+      ) : !totals.data || !summary.data ? (
         <section className="hero hero-loading">
           <Loading rows={3} />
         </section>
       ) : (
-        <Hero totals={totals.data} debts={debts.data.items} />
+        <Hero totals={totals.data} summary={summary.data} />
       )}
 
       <div className="overview-grid">
-        <Today />
-        <Pipeline debts={debts.data?.items} />
+        <Today summary={summary.data} />
+        <Pipeline summary={summary.data} />
       </div>
 
       {totals.data && <Enforceability pct={totals.data.enforceable_share_pct} paper={Number(totals.data.paper_notes_at_risk)} />}
@@ -59,11 +59,11 @@ export function OverviewPage() {
   );
 }
 
-function Hero({ totals, debts }: { totals: NonNullable<ReturnType<typeof useTotals>['data']>; debts: DebtRow[] }) {
+function Hero({ totals, summary }: { totals: NonNullable<ReturnType<typeof useTotals>['data']>; summary: Summary }) {
   const { t } = useI18n();
-  const reminders = debts.reduce((n, d) => n + d.attempts_count, 0);
-  const promises = debts.filter((d) => d.status === 'promised').length;
-  const legal = debts.filter((d) => d.status === 'legal_ready' || d.status === 'in_legal').length;
+  const reminders = summary.reminders_sent;
+  const promises = summary.promises_open;
+  const legal = summary.legal;
   const pct = share(totals.recovered, totals.total_owed);
 
   return (
@@ -111,22 +111,21 @@ function Figure({ label, amount, tone }: { label: string; amount: string; tone?:
   );
 }
 
-function Today() {
+function Today({ summary }: { summary: Summary | undefined }) {
   const { t } = useI18n();
   const approvals = useApprovals();
   const waiting = useWaitingReminders();
-  const legal = useDebts({ status: 'legal_ready', limit: 1 });
-  const loading = approvals.isLoading || waiting.isLoading || legal.isLoading;
+  const loading = approvals.isLoading || waiting.isLoading || !summary;
 
   const items: { key: string; to: string; icon: ReactNode; title: string; hint: string; tone: string }[] = [];
   const pay = approvals.data?.payments.length ?? 0;
   const dis = approvals.data?.disputes.length ?? 0;
   const rem = waiting.data?.reminders.length ?? 0;
-  const leg = legal.data?.total ?? 0;
+  const leg = summary?.statuses.legal_ready?.count ?? 0;
   if (pay) items.push({ key: 'pay', to: '/approvals/payments', icon: <HandCoins size={20} />, title: t('todo.payments', { count: pay }), hint: t('todo.paymentsHint'), tone: 'green' });
   if (dis) items.push({ key: 'dis', to: '/approvals/disputes', icon: <MessageSquareWarning size={20} />, title: t('todo.disputes', { count: dis }), hint: t('todo.disputesHint'), tone: 'red' });
   if (rem) items.push({ key: 'rem', to: '/approvals/reminders', icon: <Send size={20} />, title: t('todo.reminders', { count: rem }), hint: t('todo.remindersHint'), tone: 'active' });
-  if (leg) items.push({ key: 'leg', to: '/debtors?status=legal_ready', icon: <Gavel size={20} />, title: t('todo.legal', { count: leg }), hint: t('todo.legalHint'), tone: 'legal' });
+  if (leg) items.push({ key: 'leg', to: '/legal', icon: <Gavel size={20} />, title: t('todo.legal', { count: leg }), hint: t('todo.legalHint'), tone: 'legal' });
 
   return (
     <section className="panel today" aria-labelledby="today-title">
@@ -159,9 +158,9 @@ function Today() {
   );
 }
 
-function Pipeline({ debts }: { debts: DebtRow[] | undefined }) {
+function Pipeline({ summary }: { summary: Summary | undefined }) {
   const { t } = useI18n();
-  if (!debts) {
+  if (!summary) {
     return (
       <section className="panel pipeline">
         <Loading rows={4} />
@@ -169,8 +168,8 @@ function Pipeline({ debts }: { debts: DebtRow[] | undefined }) {
     );
   }
   const groups = PIPELINE.map((status) => {
-    const rows = debts.filter((d) => d.status === status);
-    return { status, count: rows.length, amount: sum(rows.map((d) => d.amount_outstanding)) };
+    const s = summary.statuses[status];
+    return { status, count: s?.count ?? 0, amount: s?.outstanding ?? '0.00' };
   }).filter((g) => g.count > 0);
   const total = sum(groups.map((g) => g.amount));
 
@@ -244,14 +243,17 @@ function Activity() {
       </div>
       {!notes.data ? (
         <Loading rows={4} />
+      ) : notes.data.items.length === 0 ? (
+        <p className="today-empty">{t('notes.empty')}</p>
       ) : (
         <ol className="feed">
-          {notes.data.slice(0, 5).map((n) => {
-            const Icon = KIND_ICON[n.kind];
+          {notes.data.items.slice(0, 5).map((n) => {
+            const Icon = KIND_ICON[n.kind as keyof typeof KIND_ICON] ?? Bell;
+            const to = notificationLink(n);
             return (
               <li key={n.id} className={n.read_at ? 'feed-row' : 'feed-row feed-unread'}>
                 <Icon size={17} aria-hidden="true" className={`feed-icon kind-${n.kind}`} />
-                <span className="feed-text">{notificationText(n, t)}</span>
+                <span className="feed-text">{to ? <Link to={to}>{notificationText(n, t)}</Link> : notificationText(n, t)}</span>
                 <time className="feed-time" dateTime={n.created_at}>
                   {relative(n.created_at)}
                 </time>
