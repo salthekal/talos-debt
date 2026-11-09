@@ -111,9 +111,8 @@ jobs:
         with:
           node-version: 22
       - name: Install psql and openpyxl
-        run: |
-          sudo apt-get update -q && sudo apt-get install -y -q postgresql-client
-          pip install openpyxl==3.1.5
+        # From apt, so the system Python finds it (e2e/run.sh runs Python isolated, without user packages).
+        run: sudo apt-get update -q && sudo apt-get install -y -q postgresql-client python3-openpyxl
       - name: Install
         run: |
           (cd api && npm ci)
