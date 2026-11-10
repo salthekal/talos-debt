@@ -183,7 +183,7 @@ async function shot(page, name) {
  */
 async function englishLeftInArabic(page) {
   return page.evaluate(() => {
-    const allowed = /^(SAR|WhatsApp|Excel|Talos|TALOS|Najiz|Nafith|xlsx|MB|AM|PM|[A-Z]{1,4}|DBT|TRX|CHQ|Demo)$/;
+    const allowed = /^(SAR|WhatsApp|Excel|Word|Talos|TALOS|Najiz|Nafith|xlsx|MB|AM|PM|[A-Z]{1,4}|DBT|TRX|CHQ|Demo)$/;
     const skip = '[dir="ltr"], .ref, .code, bdi, .person-email, .bubble-body, .event-quote, blockquote, .template-body, .issues, .report-file, .read-facts, .receipt';
     const names = /([A-Z][a-z]+ )+Demo( [A-Z][a-z]+)*|Demo [A-Z][a-z]+( [A-Z][a-z]+)*/g;
     const out = new Set();
