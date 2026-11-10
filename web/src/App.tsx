@@ -14,6 +14,7 @@ import { DebtorPage } from './pages/Debtor';
 import { DebtorsPage } from './pages/Debtors';
 import { ImportPage } from './pages/Import';
 import { LegalPage } from './pages/Legal';
+import { LegalCasePage } from './pages/LegalCase';
 import { NotFound } from './pages/NotFound';
 import { NotificationsPage } from './pages/Notifications';
 import { OverviewPage } from './pages/Overview';
@@ -82,6 +83,8 @@ export function AppRoutes() {
           <Route path="approvals/:tab" element={<ApprovalsPage />} />
           <Route path="notifications" element={<NotificationsPage />} />
           <Route path="legal" element={<LegalPage />} />
+          <Route path="legal/:tab" element={<LegalPage />} />
+          <Route path="legal/case/:debtId" element={<LegalCasePage />} />
           <Route path="import" element={<ImportPage />} />
           <Route path="settings" element={<SettingsPage />} />
           <Route path="settings/:tab" element={<SettingsPage />} />

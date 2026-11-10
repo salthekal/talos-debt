@@ -501,3 +501,162 @@ describe('documents', () => {
     expect(sent[0]).toMatchObject({ docType: 'contract' });
   });
 });
+
+// ------------------------------------------------------- legal and Najiz
+
+/** The case page of a sample legal debt, by debtor name. */
+async function legalCaseOf(name: string) {
+  const rows = await demoSource.legal();
+  return rows.find((r) => r.full_name === name)!;
+}
+
+describe('legal and Najiz filing', () => {
+  it('lists each debt with where it stands, the total as text, and the note template', async () => {
+    renderAt('/legal');
+    expect(await screen.findByText('Bilal Ahmed')).toBeInTheDocument();
+    expect(screen.getByText(en('legal.stage.missing', { count: 2 }))).toBeInTheDocument();
+    expect(screen.getByText(en('legal.stage.to_approve'))).toBeInTheDocument();
+    expect(screen.getByText(en('legal.stage.approved'))).toBeInTheDocument();
+    expect(screen.getByText(en('legal.total', { count: 3 }))).toBeInTheDocument();
+    // 4,200 + 3,200 + 2,250, added as text
+    expect(screen.getByText('9,650')).toBeInTheDocument();
+    const tpl = screen.getByRole('link', { name: en('legal.template.download') });
+    expect(tpl).toHaveAttribute('download', 'promissory-note-template.docx');
+    expect(tpl.getAttribute('href')).toBeTruthy();
+    // Only the approved debt can be chosen, and it is chosen at the start.
+    expect(screen.getAllByRole('checkbox')).toHaveLength(1);
+    expect(screen.getByRole('button', { name: en('legal.fileSelected', { count: 1 }) })).toBeEnabled();
+    expect(screen.queryByText('Omar Farouk')).not.toBeInTheDocument();
+  });
+
+  it('shows what was filed on Najiz, in Arabic', async () => {
+    renderAt('/legal/filed', demoSource, 'ar');
+    expect(await screen.findByText('Omar Farouk')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: ar('legal.title') })).toBeInTheDocument();
+    expect(screen.getByText('401014800012345')).toBeInTheDocument();
+    expect(screen.getByText('قيد التنفيذ')).toBeInTheDocument();
+    expect(screen.getByText(ar('legal.checksHint'))).toBeInTheDocument();
+  });
+
+  it('a case with missing details cannot be approved until they are filled in', async () => {
+    const bilal = await legalCaseOf('Bilal Ahmed');
+    const saved: unknown[] = [];
+    const user = userEvent.setup();
+    renderAt(`/legal/case/${bilal.debt_id}`, { ...demoSource, saveNajizDetails: async (id, input) => void saved.push({ id, input }) });
+    expect(await screen.findByText(en('case.missingTitle', { count: 2 }))).toBeInTheDocument();
+    expect(screen.getByText(en('najiz.field.debtor_name'))).toBeInTheDocument();
+    expect(screen.getByText(en('najiz.field.note_place'))).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: en('case.approve') })).toBeDisabled();
+
+    await user.click(screen.getByRole('button', { name: en('case.editName') }));
+    const dialog = await screen.findByRole('dialog');
+    await user.click(within(dialog).getByRole('button', { name: en('common.save') }));
+    expect(within(dialog).getAllByText(en('common.required'))).toHaveLength(2);
+    expect(saved).toHaveLength(0);
+    await user.type(within(dialog).getByLabelText(en('case.firstName')), 'Bilal');
+    await user.type(within(dialog).getByLabelText(en('case.familyName')), 'Ahmed');
+    await user.click(within(dialog).getByRole('button', { name: en('common.save') }));
+    await waitFor(() => expect(saved).toHaveLength(1));
+    expect(saved[0]).toEqual({ id: bilal.debt_id, input: { debtor: { first_name: 'Bilal', family_name: 'Ahmed' } } });
+  });
+
+  it('the place of the note and its due type are asked for together', async () => {
+    const bilal = await legalCaseOf('Bilal Ahmed');
+    const saved: unknown[] = [];
+    const user = userEvent.setup();
+    renderAt(`/legal/case/${bilal.debt_id}`, { ...demoSource, saveNajizDetails: async (_id, input) => void saved.push(input) });
+    await user.click(await screen.findByRole('button', { name: en('case.editNote') }));
+    const dialog = await screen.findByRole('dialog');
+    await user.click(within(dialog).getByLabelText(en('case.onDemand')));
+    await user.click(within(dialog).getByRole('button', { name: en('common.save') }));
+    expect(within(dialog).getByText(en('common.required'))).toBeInTheDocument();
+    await user.type(within(dialog).getByLabelText(en('case.placeLabel')), 'Jeddah');
+    await user.click(within(dialog).getByRole('button', { name: en('common.save') }));
+    await waitFor(() => expect(saved).toEqual([{ note: { issue_city: 'Jeddah', due_on_demand: true, due_date: null } }]));
+  });
+
+  it('approving needs the pledge and the owner email and mobile', async () => {
+    const javed = await legalCaseOf('Javed Iqbal');
+    const sent: unknown[] = [];
+    const user = userEvent.setup();
+    renderAt(`/legal/case/${javed.debt_id}`, { ...demoSource, approveFiling: async (id, input) => void sent.push({ id, input }) });
+    expect(await screen.findByText(en('case.completeTitle'))).toBeInTheDocument();
+    const email = screen.getByLabelText(en('case.contactEmail'));
+    expect(email).toHaveValue('khalid@alnokhba.example');
+    await user.click(screen.getByRole('button', { name: en('case.approve') }));
+    expect(screen.getByText(en('case.pledgeNeeded'))).toBeInTheDocument();
+    await user.clear(email);
+    await user.type(email, 'not-an-email');
+    await user.click(screen.getByRole('checkbox'));
+    await user.click(screen.getByRole('button', { name: en('case.approve') }));
+    expect(screen.getByText(en('case.emailBad'))).toBeInTheDocument();
+    expect(sent).toHaveLength(0);
+    await user.clear(email);
+    await user.type(email, 'owner@company.example');
+    await user.click(screen.getByRole('button', { name: en('case.approve') }));
+    await waitFor(() => expect(sent).toHaveLength(1));
+    expect(sent[0]).toEqual({ id: javed.debt_id, input: { contact_email: 'owner@company.example', contact_phone: '+966500000100', pledge: true } });
+  });
+
+  it('a viewer sees the case but cannot approve, edit or file', async () => {
+    const javed = await legalCaseOf('Javed Iqbal');
+    renderAt(`/legal/case/${javed.debt_id}`, withRole('viewer'));
+    expect(await screen.findByText(en('case.viewerNote'))).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: en('case.approve') })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: en('case.editName') })).not.toBeInTheDocument();
+  });
+
+  it('filing signs in with Nafath: the number is shown and sent to the owner', async () => {
+    const started: string[][] = [];
+    const run = {
+      id: 'run-t', stage: 'waiting_nafath' as const, nafath_number: '47', nafath_expires_at: new Date(Date.now() + 60_000).toISOString(),
+      owner_phone_last4: '0100', started_at: new Date().toISOString(), stop_reason: null,
+      cases: [{ debt_id: 'x', full_name: 'Nasir Mahmood', ref_code: 'DBT-2026-0019', amount: '2250.00', step: 'waiting' as const, request_number: null }],
+    };
+    const user = userEvent.setup();
+    renderAt('/legal', { ...demoSource, startNajizRun: async (ids) => (started.push(ids), run), najizRun: async () => run, cancelNajizRun: async () => undefined });
+    await user.click(await screen.findByRole('button', { name: en('legal.fileSelected', { count: 1 }) }));
+    const dialog = await screen.findByRole('dialog');
+    expect(within(dialog).getByText('Nasir Mahmood')).toBeInTheDocument();
+    await user.click(within(dialog).getByRole('button', { name: en('najiz.start') }));
+    expect(await within(dialog).findByLabelText(en('najiz.nafathNumber', { n: '47' }))).toBeInTheDocument();
+    expect(within(dialog).getByText(en('najiz.nafathSent', { last4: '0100' }))).toBeInTheDocument();
+    expect(started).toHaveLength(1);
+    expect(started[0]).toHaveLength(1);
+  });
+
+  it('a filing that stopped says why, in Arabic', async () => {
+    const run = {
+      id: 'run-s', stage: 'stopped' as const, nafath_number: null, nafath_expires_at: null, owner_phone_last4: '0100',
+      started_at: new Date().toISOString(), stop_reason: 'captcha' as const,
+      cases: [{ debt_id: 'x', full_name: 'Nasir Mahmood', ref_code: 'DBT-2026-0019', amount: '2250.00', step: 'stopped' as const, request_number: null }],
+    };
+    const user = userEvent.setup();
+    renderAt('/legal', { ...demoSource, startNajizRun: async () => run, najizRun: async () => run }, 'ar');
+    await user.click(await screen.findByRole('button', { name: ar('legal.fileSelected', { count: 1 }) }));
+    await user.click(within(await screen.findByRole('dialog')).getByRole('button', { name: ar('najiz.start') }));
+    expect(await screen.findByText(ar('najiz.stop.captcha'))).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: ar('najiz.stoppedTitle') })).toBeInTheDocument();
+  });
+
+  it('a status entered by hand needs the Najiz request number', async () => {
+    const omar = await legalCaseOf('Omar Farouk');
+    const sent: unknown[] = [];
+    const user = userEvent.setup();
+    renderAt(`/legal/case/${omar.debt_id}`, { ...demoSource, addLegalStatus: async (_id, input) => void sent.push(input) });
+    await user.click(await screen.findByRole('button', { name: en('case.addStatus') }));
+    const dialog = await screen.findByRole('dialog');
+    const number = within(dialog).getByLabelText(en('legal.col.request'));
+    await user.clear(number);
+    await user.type(number, '12-34');
+    await user.click(within(dialog).getByRole('button', { name: en('common.save') }));
+    expect(within(dialog).getByText(en('case.numberBad'))).toBeInTheDocument();
+    expect(sent).toHaveLength(0);
+    await user.clear(number);
+    await user.type(number, '401014800012345');
+    await user.selectOptions(within(dialog).getByLabelText(en('case.statusLabel')), 'order_issued');
+    await user.type(within(dialog).getByLabelText(`${en('case.statusNote')} (${en('common.optional')})`), 'Text message from Najiz');
+    await user.click(within(dialog).getByRole('button', { name: en('common.save') }));
+    await waitFor(() => expect(sent).toEqual([{ status: 'order_issued', najiz_request_number: '401014800012345', note: 'Text message from Najiz' }]));
+  });
+});

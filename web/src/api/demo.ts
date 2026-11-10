@@ -4,8 +4,10 @@
  * run on real data with no change.
  */
 import { fromHalalas, share, subtract, sum, toHalalas } from '../lib/money';
+import noteTemplate from '../assets/promissory-note-template.docx?url';
 import { ApiError, type DataSource, type DebtQuery } from './source';
 import type {
+  LegalCaseDetail, LegalEvent, LegalRow, LegalStage, NajizCaseStep, NajizField, NajizRun,
   Approvals, DebtorDetail, DebtRow, DebtStatus, Debtor, DocumentInfo, FollowUpRules, ImportReport, Language, Notification, Phone, Summary,
   Task, Template, TimelineEvent, User, WaitingReminder,
 } from './types';
@@ -68,6 +70,10 @@ const SEEDS: Seed[] = [
   { name: 'Faisal Qureshi', nationality: 'PK', lang: 'en', idType: 'iqama', debts: [
     { original: '3900.00', outstanding: '3900.00', status: 'in_follow_up', attempts: 1, instrument: 'cheque', reason: 'Cash on delivery not handed over', lastContact: 6 },
     { original: '650.00', outstanding: '650.00', status: 'open', attempts: 0, instrument: 'none', reason: 'Phone not returned' } ] },
+  { name: 'Javed Iqbal', nationality: 'PK', lang: 'ur', idType: 'iqama', debts: [
+    { original: '3200.00', outstanding: '3200.00', status: 'legal_ready', attempts: 5, instrument: 'nafith_promissory_note', reason: 'Motorcycle rent', lastContact: 98 } ] },
+  { name: 'Nasir Mahmood', nationality: 'PK', lang: 'ur', idType: 'iqama', debts: [
+    { original: '2750.00', outstanding: '2250.00', status: 'legal_ready', attempts: 5, instrument: 'paper_promissory_note', reason: 'Car rent, two months', lastContact: 150 } ] },
 ];
 
 /** Reasons in Arabic, for the reminders sent to Arabic speakers. */
@@ -246,6 +252,119 @@ const findDebt = (id: string) => {
   if (!d) throw new ApiError(404, 'not_found', 'Debt not found');
   return d;
 };
+
+// --------------------------------------------------------- legal (Phase 5)
+
+/** What each legal debt looks like on its way to Najiz. Made-up values only. */
+interface LegalSample {
+  stage: LegalStage;
+  missing: NajizField[];
+  names: [string | null, string | null, string | null, string | null];
+  city: string | null;
+  issueDate: string;
+  received: string;
+  approval: LegalCaseDetail['approval'];
+  najiz: { number: string; status: string; circuit: string; submitted: string; checked: string } | null;
+  events: LegalEvent[];
+}
+
+const legalDebts = debts.filter((d) => d.status === 'legal_ready' || d.status === 'in_legal');
+const byName = (name: string) => legalDebts.find((d) => d.full_name === name)!;
+const OWNER = { name: 'Khalid Al-Nokhba', email: 'khalid@alnokhba.example', phone: '+966500000100' };
+const ev = (id: string, status: LegalEvent['status'], source: LegalEvent['source'], hours: number, extra: Partial<LegalEvent> = {}): LegalEvent =>
+  ({ id, status, source, najiz_status: null, note: null, recorded_by_name: source === 'staff' ? 'Noura Al-Qahtani' : null, recorded_at: ago(hours), ...extra });
+
+const legalSamples = new Map<string, LegalSample>([
+  [byName('Bilal Ahmed').debt_id, { stage: 'missing', missing: ['debtor_name', 'note_place'], names: [null, null, null, null], city: null,
+    issueDate: day(-310), received: '0.00', approval: null, najiz: null, events: [] }],
+  [byName('Javed Iqbal').debt_id, { stage: 'to_approve', missing: [], names: ['Javed', 'Muhammad', 'Iqbal', 'Khan'], city: 'Jeddah',
+    issueDate: day(-280), received: '0.00', approval: null, najiz: null, events: [] }],
+  [byName('Nasir Mahmood').debt_id, { stage: 'approved', missing: [], names: ['Nasir', 'Mahmood', null, 'Butt'], city: 'Jeddah',
+    issueDate: day(-400), received: '500.00',
+    approval: { approved_by_name: 'Noura Al-Qahtani', approved_at: ago(20), contact_email: OWNER.email, contact_phone: OWNER.phone },
+    najiz: null, events: [ev('e3', 'approved', 'staff', 20)] }],
+  [byName('Omar Farouk').debt_id, { stage: 'submitted', missing: [], names: ['Omar', 'Farouk', 'Hassan', 'Idris'], city: 'Jeddah',
+    issueDate: day(-500), received: '0.00',
+    approval: { approved_by_name: 'Noura Al-Qahtani', approved_at: ago(24 * 9 + 2), contact_email: OWNER.email, contact_phone: OWNER.phone },
+    najiz: { number: '401014800012345', status: 'قيد التنفيذ', circuit: 'دائرة التنفيذ الثالثة', submitted: ago(24 * 9), checked: ago(20) },
+    events: [
+      ev('e7', 'submitted', 'najiz_check', 20, { najiz_status: 'قيد التنفيذ' }),
+      ev('e6', 'submitted', 'najiz_filing', 24 * 9, { najiz_status: 'تم تقديم الطلب بنجاح' }),
+      ev('e5', 'approved', 'staff', 24 * 9 + 2),
+    ] }],
+]);
+// The demo sign-in files these when it reaches the end.
+let legalRuns: { run: NajizRun; startedMs: number }[] = [];
+
+function legalRow(d: DebtRow): LegalRow {
+  const x = legalSamples.get(d.debt_id)!;
+  return {
+    debt_id: d.debt_id, debtor_id: d.debtor_id, full_name: d.full_name, ref_code: d.ref_code, amount_outstanding: d.amount_outstanding,
+    instrument_type: d.instrument_type, case_id: x.stage === 'missing' || x.stage === 'to_approve' ? null : `case-${d.debt_id}`,
+    stage: x.stage, missing: x.missing, najiz_request_number: x.najiz?.number ?? null, najiz_status: x.najiz?.status ?? null,
+    najiz_circuit: x.najiz?.circuit ?? null, submitted_at: x.najiz?.submitted ?? null, najiz_status_checked_at: x.najiz?.checked ?? null,
+    legal_ready_at: ago(26 + legalDebts.indexOf(d) * 30),
+  };
+}
+
+const pdf = (id: string, name: string, size: number, hours: number, debtorId: string | null = null): DocumentInfo =>
+  ({ id, debtor_id: debtorId, debt_id: null, doc_type: 'other', file_name: name, mime_type: 'application/pdf', size_bytes: size, source: 'upload', created_at: ago(hours) });
+
+function legalDetail(debtId: string): LegalCaseDetail {
+  const d = legalDebts.find((x) => x.debt_id === debtId);
+  if (!d) throw new ApiError(404, 'not_found', 'Debt not found');
+  const x = legalSamples.get(debtId)!;
+  const debtor = debtors.find((y) => y.id === d.debtor_id)!;
+  return {
+    row: legalRow(d),
+    company: { legal_name: 'Al Nokhba Delivery Co.', unified_number: '7000000001', owner_name: OWNER.name, owner_id_type: 'national_id',
+      owner_id_last4: '0421', owner_email: OWNER.email, owner_phone: OWNER.phone, bank_name: 'Demo Bank', iban: 'SA4420000001234567891234' },
+    debtor: { full_name: d.full_name, id_type: debtor.id_type, id_number: debtor.id_number, nationality: debtor.nationality,
+      first_name: x.names[0], father_name: x.names[1], grandfather_name: x.names[2], family_name: x.names[3],
+      phone: phones.get(d.debtor_id)?.[0]?.phone_e164 ?? null },
+    note: { type: d.instrument_type, reference_number: d.instrument_type === 'nafith_promissory_note' ? `NF-${d.ref_code.slice(-4)}77` : null,
+      issue_date: x.issueDate, due_date: day(-200), due_on_demand: false, issue_country: x.city ? 'SA' : null, issue_city: x.city,
+      face_amount: d.amount_original },
+    amounts: { claimed: d.amount_outstanding, received: x.received },
+    files: {
+      cr: pdf('lf-cr', 'commercial-registration.pdf', 690_000, 24 * 60),
+      establishment_contract: pdf('lf-ec', 'establishment-contract.pdf', 1_480_000, 24 * 60),
+      partners_decision: null,
+      promissory_note: pdf(`lf-n-${d.debt_id}`, `promissory-note-${d.ref_code}.pdf`, 240_000, 24 * 90, d.debtor_id),
+    },
+    approval: x.approval,
+    events: x.events,
+  };
+}
+
+const RUN_STEPS: NajizCaseStep[] = ['request_type', 'requester', 'debtor', 'content', 'sending', 'sent'];
+/** The demo sign-in moves on by itself: Nafath is "approved" after a few seconds, then each note is filed step by step. */
+function runNow(entry: { run: NajizRun; startedMs: number }): NajizRun {
+  const { run } = entry;
+  if (run.stage === 'stopped' || run.stage === 'done') return run;
+  const t = Date.now() - entry.startedMs;
+  if (t < 1500) return { ...run, stage: 'starting' };
+  if (t < 9000) return { ...run, stage: 'waiting_nafath', nafath_number: '47', nafath_expires_at: new Date(entry.startedMs + 61_500).toISOString() };
+  const stepMs = 1100;
+  const elapsed = Math.floor((t - 9000) / stepMs);
+  const cases = run.cases.map((c, i) => {
+    const k = elapsed - i * RUN_STEPS.length;
+    const step: NajizCaseStep = k < 0 ? 'waiting' : RUN_STEPS[Math.min(k, RUN_STEPS.length - 1)]!;
+    return { ...c, step, request_number: step === 'sent' ? `40101480${String(51600 + i * 137).padStart(7, '0')}` : null };
+  });
+  const finished = cases.every((c) => c.step === 'sent');
+  const next: NajizRun = { ...run, stage: finished ? 'done' : 'filing', nafath_number: null, cases };
+  if (finished) {
+    entry.run = next;
+    for (const c of cases) {
+      const x = legalSamples.get(c.debt_id)!;
+      x.stage = 'submitted';
+      x.najiz = { number: c.request_number!, status: 'تم تقديم الطلب بنجاح', circuit: '', submitted: new Date().toISOString(), checked: new Date().toISOString() };
+      x.events = [ev(`e-${c.debt_id}`, 'submitted', 'najiz_filing', 0, { najiz_status: 'تم تقديم الطلب بنجاح' }), ...x.events];
+    }
+  }
+  return next;
+}
 
 export const demoSource: DataSource = {
   demo: true,
@@ -472,4 +591,72 @@ export const demoSource: DataSource = {
     imports = imports.filter((x) => x.id !== id);
     return done();
   },
+
+  legal: () => pause(legalDebts.map(legalRow)),
+  legalCase: async (debtId) => pause(legalDetail(debtId)),
+  saveNajizDetails: async (debtId, input) => {
+    const x = legalSamples.get(debtId);
+    if (!x) throw new ApiError(404, 'not_found', 'Debt not found');
+    if (input.debtor) {
+      x.names = [input.debtor.first_name, input.debtor.father_name || null, input.debtor.grandfather_name || null, input.debtor.family_name];
+      x.missing = x.missing.filter((m) => m !== 'debtor_name');
+    }
+    if (input.note) {
+      x.city = input.note.issue_city;
+      x.missing = x.missing.filter((m) => m !== 'note_place');
+    }
+    if (x.stage === 'missing' && x.missing.length === 0) x.stage = 'to_approve';
+    return done();
+  },
+  approveFiling: async (debtId, input) => {
+    const x = legalSamples.get(debtId);
+    if (!x) throw new ApiError(404, 'not_found', 'Debt not found');
+    if (x.missing.length) throw new ApiError(409, 'najiz_details_missing', 'Fill in what Najiz needs before approving.');
+    x.stage = 'approved';
+    x.approval = { approved_by_name: 'Noura Al-Qahtani', approved_at: new Date().toISOString(), contact_email: input.contact_email, contact_phone: input.contact_phone };
+    x.events = [ev(`e-a-${debtId}`, 'approved', 'staff', 0), ...x.events];
+    return done();
+  },
+  startNajizRun: async (debtIds) => {
+    const picked = legalDebts.filter((d) => debtIds.includes(d.debt_id));
+    if (!picked.length || picked.some((d) => legalSamples.get(d.debt_id)!.stage !== 'approved')) {
+      throw new ApiError(409, 'not_approved', 'Only approved debts can be filed.');
+    }
+    for (const d of picked) legalSamples.get(d.debt_id)!.stage = 'filing';
+    const run: NajizRun = {
+      id: `run-${legalRuns.length + 1}`, stage: 'starting', nafath_number: null, nafath_expires_at: null, owner_phone_last4: OWNER.phone.slice(-4),
+      started_at: new Date().toISOString(), stop_reason: null,
+      cases: picked.map((d) => ({ debt_id: d.debt_id, full_name: d.full_name, ref_code: d.ref_code, amount: d.amount_outstanding, step: 'waiting', request_number: null })),
+    };
+    legalRuns = [...legalRuns, { run, startedMs: Date.now() }];
+    return pause(run);
+  },
+  najizRun: async (id) => {
+    const entry = legalRuns.find((r) => r.run.id === id);
+    if (!entry) throw new ApiError(404, 'not_found', 'Sign-in not found');
+    return pause(runNow(entry));
+  },
+  cancelNajizRun: async (id) => {
+    const entry = legalRuns.find((r) => r.run.id === id);
+    if (!entry) throw new ApiError(404, 'not_found', 'Sign-in not found');
+    const now = runNow(entry);
+    entry.run = { ...now, stage: 'stopped', stop_reason: 'cancelled' };
+    for (const c of now.cases) {
+      const x = legalSamples.get(c.debt_id)!;
+      if (x.stage === 'filing') x.stage = 'approved';
+    }
+    return done();
+  },
+  addLegalStatus: async (debtId, input) => {
+    const x = legalSamples.get(debtId);
+    if (!x) throw new ApiError(404, 'not_found', 'Debt not found');
+    if (['missing', 'to_approve'].includes(x.stage) && input.status !== 'withdrawn') {
+      throw new ApiError(409, 'not_approved', 'This case has not been approved yet.');
+    }
+    x.stage = input.status === 'approved' || input.status === 'ready' ? x.stage : input.status;
+    if (input.najiz_request_number && x.najiz) x.najiz.number = input.najiz_request_number;
+    x.events = [ev(`e-s-${x.events.length}`, input.status, 'staff', 0, { note: input.note ?? null }), ...x.events];
+    return done();
+  },
+  noteTemplateUrl: () => noteTemplate,
 };
