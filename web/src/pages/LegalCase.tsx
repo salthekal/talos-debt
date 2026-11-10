@@ -1,9 +1,9 @@
-import { AlertCircle, ArrowLeft, Building2, CheckCircle2, CircleDashed, FileText, History, Landmark, Pencil, PlusCircle, ScrollText, ShieldCheck, User as UserIcon } from 'lucide-react';
+import { AlertCircle, ArrowLeft, Building2, CheckCircle2, CircleDashed, FileText, History, Landmark, Pencil, PlusCircle, ScrollText, ShieldCheck, Upload, User as UserIcon } from 'lucide-react';
 import { useState, type ReactNode } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import { useAddLegalStatus, useApproveFiling, useLegalCase, useSaveNajizDetails } from '../api/hooks';
+import { useAddLegalStatus, useApproveFiling, useLegalCase, useMe, useSaveNajizDetails, useUploadLegalFile } from '../api/hooks';
 import { ApiError } from '../api/source';
-import type { DocumentInfo, LegalCaseDetail, LegalStatus, NajizField, NajizFileKind } from '../api/types';
+import type { DocumentInfo, LegalCaseDetail, LegalStatus, NajizField, NajizFileKind, NajizUploadKind } from '../api/types';
 import { useCanEdit } from '../components/actions';
 import { ErrorState, Initials, Loading, Money } from '../components/bits';
 import { NajizFilingDialog } from '../components/NajizFiling';
@@ -34,7 +34,9 @@ export function LegalCasePage() {
   const { t, locale, formatDate } = useI18n();
   const detail = useLegalCase(debtId);
   const canEdit = useCanEdit();
-  const [dialog, setDialog] = useState<'name' | 'note' | 'status' | 'file' | null>(null);
+  const me = useMe();
+  const canCompany = me.data?.user.role === 'owner' || me.data?.user.role === 'admin';
+  const [dialog, setDialog] = useState<'company' | 'name' | 'note' | 'status' | 'file' | null>(null);
 
   if (detail.isError) {
     const e = detail.error;
@@ -78,7 +80,12 @@ export function LegalCasePage() {
 
       <div className="case-grid">
         <div className="case-main">
-          <Section icon={<Building2 size={18} />} title={t('case.company')} hint={t('case.companyHint')}>
+          <Section
+            icon={<Building2 size={18} />}
+            title={t('case.company')}
+            hint={t('case.companyHint')}
+            action={canCompany ? <EditButton label={t('case.editCompany')} onClick={() => setDialog('company')} /> : null}
+          >
             <Line label={t('case.companyName')} value={c.company.legal_name} />
             <Line label={t('case.unified')} value={c.company.unified_number && <bdi dir="ltr" className="code">{c.company.unified_number}</bdi>} missing={missing.has('unified_number')} />
             <Line
@@ -92,8 +99,8 @@ export function LegalCasePage() {
             />
             <Line label={t('case.representation')} value={t('case.legalRepresentative')} />
             <Line label={t('case.bank')} value={c.company.iban && (<>{c.company.bank_name} · <bdi dir="ltr" className="code">{c.company.iban}</bdi></>)} missing={missing.has('iban')} />
-            <FileLine kind="cr" doc={c.files.cr} missing={missing.has('cr_file')} />
-            <FileLine kind="establishment_contract" doc={c.files.establishment_contract} missing={missing.has('contract_file')} optional />
+            <FileLine kind="cr" doc={c.files.cr} missing={missing.has('cr_file')} upload={canEdit ? c.row.debt_id : undefined} />
+            <FileLine kind="establishment_contract" doc={c.files.establishment_contract} missing={missing.has('contract_file')} optional upload={canEdit ? c.row.debt_id : undefined} />
             <FileLine kind="partners_decision" doc={c.files.partners_decision} optional />
           </Section>
 
@@ -136,7 +143,7 @@ export function LegalCasePage() {
             <Line label={t('case.faceAmount')} value={c.note.face_amount && <Money amount={c.note.face_amount} />} />
             <Line label={t('case.received')} value={isZero(c.amounts.received) ? t('case.receivedNone') : <Money amount={c.amounts.received} />} />
             <Line label={t('case.claim')} value={<strong><Money amount={c.amounts.claimed} /></strong>} />
-            <FileLine kind="promissory_note" doc={c.files.promissory_note} missing={missing.has('note_file')} />
+            {!missing.has('note_type') && <FileLine kind="promissory_note" doc={c.files.promissory_note} missing={missing.has('note_file')} upload={canEdit && before ? c.row.debt_id : undefined} />}
           </Section>
         </div>
 
@@ -157,6 +164,12 @@ export function LegalCasePage() {
                 <button type="button" className="btn btn-primary btn-block" onClick={() => setDialog('file')}>
                   <Landmark size={17} aria-hidden="true" />
                   {t('legal.fileOne')}
+                </button>
+              )}
+              {canEdit && row.stage === 'approved' && (
+                <button type="button" className="btn btn-quiet btn-block" onClick={() => setDialog('status')}>
+                  <PlusCircle size={17} aria-hidden="true" />
+                  {t('case.addStatus')}
                 </button>
               )}
               {row.stage === 'filing' && <p className="muted">{t('case.filingNow')}</p>}
@@ -193,6 +206,7 @@ export function LegalCasePage() {
         </aside>
       </div>
 
+      {dialog === 'company' && <CompanyDialog c={c} onClose={() => setDialog(null)} />}
       {dialog === 'name' && <NameDialog c={c} onClose={() => setDialog(null)} />}
       {dialog === 'note' && <NoteDialog c={c} onClose={() => setDialog(null)} />}
       {dialog === 'status' && <StatusDialog c={c} onClose={() => setDialog(null)} />}
@@ -248,7 +262,7 @@ function Section({ icon, title, hint, action, children }: { icon: ReactNode; tit
   );
 }
 
-function Line({ label, value, missing, missingText, optional }: { label: string; value: ReactNode; missing?: boolean; missingText?: string; optional?: boolean }) {
+function Line({ label, value, missing, missingText, optional, action }: { label: string; value: ReactNode; missing?: boolean; missingText?: string; optional?: boolean; action?: ReactNode }) {
   const { t } = useI18n();
   const empty = value === null || value === undefined || value === '';
   const bad = missing || (!optional && empty);
@@ -269,13 +283,17 @@ function Line({ label, value, missing, missingText, optional }: { label: string;
             <span>{value}</span>
           </>
         )}
+        {action}
       </dd>
     </div>
   );
 }
 
-function FileLine({ kind, doc, missing, optional }: { kind: NajizFileKind; doc: DocumentInfo | null; missing?: boolean; optional?: boolean }) {
+function FileLine({ kind, doc, missing, optional, upload }: { kind: NajizFileKind; doc: DocumentInfo | null; missing?: boolean; optional?: boolean; upload?: string }) {
   const { t, locale } = useI18n();
+  const toast = useToast();
+  const send = useUploadLegalFile();
+  const canUpload = upload && kind !== 'partners_decision' && (!doc || missing);
   const size = doc ? new Intl.NumberFormat(locale, { maximumFractionDigits: 1 }).format(Number(doc.size_bytes) / 1_048_576) : '';
   const tooBig = doc && kind !== 'promissory_note' && Number(doc.size_bytes) > NAJIZ_MAX_BYTES;
   return (
@@ -292,6 +310,32 @@ function FileLine({ kind, doc, missing, optional }: { kind: NajizFileKind; doc: 
           {tooBig && <span className="nj-note">{t('case.fileShrink')}</span>}
         </span>
       )}
+      action={canUpload ? (
+        <label className={`btn btn-quiet btn-small nj-upload${send.isPending ? ' is-busy' : ''}`}>
+          <Upload size={15} aria-hidden="true" />
+          {t('case.upload')}
+          <input
+            type="file"
+            accept="application/pdf,.pdf"
+            className="sr-only"
+            aria-label={t('case.uploadOf', { file: t(`case.file.${kind}` as MessageKey) })}
+            disabled={send.isPending}
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              e.target.value = '';
+              if (!file) return;
+              if (!/\.pdf$/i.test(file.name) && file.type !== 'application/pdf') {
+                toast(t('case.pdfOnly'), 'error');
+                return;
+              }
+              send.mutate(
+                { debtId: upload!, kind: kind as NajizUploadKind, file },
+                { onSuccess: () => toast(t('case.uploaded', { file: file.name })), onError: (err) => toast(errorText(err, t), 'error') },
+              );
+            }}
+          />
+        </label>
+      ) : null}
     />
   );
 }
@@ -414,6 +458,58 @@ function ApproveCard({ c, canEdit }: { c: LegalCaseDetail; canEdit: boolean }) {
 
 // ------------------------------------------------------------- dialogs
 
+function CompanyDialog({ c, onClose }: { c: LegalCaseDetail; onClose: () => void }) {
+  const { t } = useI18n();
+  const save = useSaveNajizDetails();
+  const [type, setType] = useState<'national_id' | 'iqama'>(c.company.owner_id_type ?? 'national_id');
+  const [ownerId, setOwnerId] = useState('');
+  const [unified, setUnified] = useState(c.company.unified_number ?? '');
+  const [tried, setTried] = useState(false);
+  const digits = (v: string) => v.replace(/[\s-]/g, '');
+  const idBad = !new RegExp(`^${type === 'national_id' ? '1' : '2'}[0-9]{9}$`).test(digits(ownerId));
+  const unifiedBad = !/^7[0-9]{9}$/.test(digits(unified));
+  const submit = () => {
+    setTried(true);
+    if (idBad || unifiedBad) return;
+    save.mutate(
+      { debtId: c.row.debt_id, input: { company: { owner_id_type: type, owner_id_number: digits(ownerId), unified_number: digits(unified) } } },
+      { onSuccess: onClose },
+    );
+  };
+  return (
+    <Dialog
+      open
+      onClose={onClose}
+      title={t('case.editCompany')}
+      footer={
+        <>
+          <button type="button" className="btn btn-quiet" onClick={onClose}>{t('common.cancel')}</button>
+          <button type="button" className="btn btn-primary" disabled={save.isPending} onClick={submit}>{t('common.save')}</button>
+        </>
+      }
+    >
+      <p className="dialog-lead">{t('case.companyLead', { name: c.company.owner_name })}</p>
+      <div className="form">
+        <Field label={t('case.ownerIdType')}>
+          {(p) => (
+            <select {...p} value={type} onChange={(e) => setType(e.target.value as 'national_id' | 'iqama')}>
+              <option value="national_id">{t('idtype.national_id')}</option>
+              <option value="iqama">{t('idtype.iqama')}</option>
+            </select>
+          )}
+        </Field>
+        <Field label={t('case.ownerId')} hint={c.company.owner_id_last4 ? t('case.ownerIdNow', { last4: c.company.owner_id_last4 }) : undefined} error={tried && idBad ? t('case.ownerIdBad') : undefined}>
+          {(p) => <input {...p} dir="ltr" inputMode="numeric" autoComplete="off" value={ownerId} onChange={(e) => setOwnerId(e.target.value)} />}
+        </Field>
+        <Field label={t('case.unified')} error={tried && unifiedBad ? t('case.unifiedBad') : undefined}>
+          {(p) => <input {...p} dir="ltr" inputMode="numeric" value={unified} onChange={(e) => setUnified(e.target.value)} />}
+        </Field>
+      </div>
+      <FormError message={save.error ? errorText(save.error, t) : null} />
+    </Dialog>
+  );
+}
+
 function NameDialog({ c, onClose }: { c: LegalCaseDetail; onClose: () => void }) {
   const { t } = useI18n();
   const save = useSaveNajizDetails();
@@ -516,7 +612,7 @@ function StatusDialog({ c, onClose }: { c: LegalCaseDetail; onClose: () => void 
   const { t } = useI18n();
   const toast = useToast();
   const add = useAddLegalStatus();
-  const [status, setStatus] = useState<LegalStatus>((c.row.stage as LegalStatus) ?? 'submitted');
+  const [status, setStatus] = useState<LegalStatus>(MANUAL_STATUSES.includes(c.row.stage as LegalStatus) ? (c.row.stage as LegalStatus) : 'submitted');
   const [note, setNote] = useState('');
   const [number, setNumber] = useState(c.row.najiz_request_number ?? '');
   const [tried, setTried] = useState(false);

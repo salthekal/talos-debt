@@ -295,6 +295,7 @@ const legalSamples = new Map<string, LegalSample>([
 ]);
 // The demo sign-in files these when it reaches the end.
 let legalRuns: { run: NajizRun; startedMs: number }[] = [];
+let demoCompany = { owner_id_type: 'national_id' as const, owner_id_number: '1000000421', unified_number: '7000000001' } as { owner_id_type: 'national_id' | 'iqama'; owner_id_number: string; unified_number: string };
 
 function legalRow(d: DebtRow): LegalRow {
   const x = legalSamples.get(d.debt_id)!;
@@ -317,8 +318,8 @@ function legalDetail(debtId: string): LegalCaseDetail {
   const debtor = debtors.find((y) => y.id === d.debtor_id)!;
   return {
     row: legalRow(d),
-    company: { legal_name: 'Al Nokhba Delivery Co.', unified_number: '7000000001', owner_name: OWNER.name, owner_id_type: 'national_id',
-      owner_id_last4: '0421', owner_email: OWNER.email, owner_phone: OWNER.phone, bank_name: 'Demo Bank', iban: 'SA4420000001234567891234' },
+    company: { legal_name: 'Al Nokhba Delivery Co.', unified_number: demoCompany.unified_number, owner_name: OWNER.name, owner_id_type: demoCompany.owner_id_type,
+      owner_id_last4: demoCompany.owner_id_number.slice(-4), owner_email: OWNER.email, owner_phone: OWNER.phone, bank_name: 'Demo Bank', iban: 'SA4420000001234567891234' },
     debtor: { full_name: d.full_name, id_type: debtor.id_type, id_number: debtor.id_number, nationality: debtor.nationality,
       first_name: x.names[0], father_name: x.names[1], grandfather_name: x.names[2], family_name: x.names[3],
       phone: phones.get(d.debtor_id)?.[0]?.phone_e164 ?? null },
@@ -601,6 +602,7 @@ export const demoSource: DataSource = {
       x.names = [input.debtor.first_name, input.debtor.father_name || null, input.debtor.grandfather_name || null, input.debtor.family_name];
       x.missing = x.missing.filter((m) => m !== 'debtor_name');
     }
+    if (input.company) demoCompany = { ...demoCompany, ...input.company };
     if (input.note) {
       x.city = input.note.issue_city;
       x.missing = x.missing.filter((m) => m !== 'note_place');
@@ -645,6 +647,11 @@ export const demoSource: DataSource = {
       const x = legalSamples.get(c.debt_id)!;
       if (x.stage === 'filing') x.stage = 'approved';
     }
+    return done();
+  },
+  uploadLegalFile: async (debtId, _kind, file) => {
+    if (!legalSamples.has(debtId)) throw new ApiError(404, 'not_found', 'Debt not found');
+    if (!/\.pdf$/i.test(file.name)) throw new ApiError(415, 'unsupported_type', 'Najiz takes PDF files only');
     return done();
   },
   addLegalStatus: async (debtId, input) => {

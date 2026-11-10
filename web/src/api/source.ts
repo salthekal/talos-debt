@@ -1,5 +1,5 @@
 import type {
-  ApproveFilingInput, LegalCaseDetail, LegalRow, LegalStatusInput, NajizDetailsInput, NajizRun,
+  ApproveFilingInput, NajizUploadKind, LegalCaseDetail, LegalRow, LegalStatusInput, NajizDetailsInput, NajizRun,
   Approvals, DebtorDetail, DebtPage, DebtStatus, FollowUpRules, ImportReport, Me, NewDebtorInput, Notification, Summary,
   DocType, DocumentInfo, Task, Template, Totals, User, WaitingReminders,
 } from './types';
@@ -84,6 +84,8 @@ export interface DataSource {
   startNajizRun(debtIds: string[]): Promise<NajizRun>;
   najizRun(id: string): Promise<NajizRun>;
   cancelNajizRun(id: string): Promise<void>;
+  /** Upload a PDF Najiz needs: the company's papers, or the copy of this debt's note. */
+  uploadLegalFile(debtId: string, kind: NajizUploadKind, file: File): Promise<void>;
   /** A status entered by hand (5.3), for example from a Najiz text message. */
   addLegalStatus(debtId: string, input: LegalStatusInput): Promise<void>;
   /** The promissory note template, a Word file with no letterhead (5.0b). */

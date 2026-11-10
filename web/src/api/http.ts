@@ -152,6 +152,14 @@ export const httpSource: DataSource = {
   cancelNajizRun: async (id) => {
     await request('POST', `/api/najiz/runs/${id}/cancel`, {});
   },
+  uploadLegalFile: async (debtId, kind, file) => {
+    const form = new FormData();
+    form.append('doc_type', kind);
+    // The company's papers belong to the client, not to one debtor.
+    if (kind === 'promissory_note') form.append('debt_id', debtId);
+    form.append('file', file, file.name);
+    await request('POST', '/api/documents', form);
+  },
   addLegalStatus: async (debtId, input) => {
     await request('POST', `/api/legal/${debtId}/status`, input);
   },

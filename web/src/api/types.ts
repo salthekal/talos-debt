@@ -294,7 +294,7 @@ export type LegalStage =
 export type NajizField =
   | 'owner_id' | 'unified_number' | 'iban' | 'cr_file' | 'contract_file'
   | 'debtor_name' | 'debtor_id' | 'debtor_nationality'
-  | 'note_file' | 'note_place' | 'note_date' | 'note_due';
+  | 'note_type' | 'note_file' | 'note_place' | 'note_date' | 'note_due';
 
 export interface LegalRow {
   debt_id: string;
@@ -327,6 +327,8 @@ export interface LegalEvent {
 }
 
 export type NajizFileKind = 'cr' | 'establishment_contract' | 'partners_decision' | 'promissory_note';
+/** Files the client can upload from the case page (the API does not take partners' decisions yet). */
+export type NajizUploadKind = 'cr' | 'establishment_contract' | 'promissory_note';
 
 /** Everything Najiz will receive for one debt, and what is missing. */
 export interface LegalCaseDetail {

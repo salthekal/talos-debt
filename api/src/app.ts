@@ -7,6 +7,7 @@ import { debtorRoutes } from './routes/debtors.js';
 import { documentRoutes } from './routes/documents.js';
 import { enforceabilityRoutes } from './routes/enforceability.js';
 import { importRoutes } from './routes/imports.js';
+import { legalRoutes } from './routes/legal.js';
 import { UPLOAD_LIMITS } from './routes/upload.js';
 import { LocalDiskStorage, type FileStorage } from './storage/storage.js';
 import { messageRoutes } from './routes/messages.js';
@@ -91,6 +92,7 @@ export function buildApp(config: Config, pool: pg.Pool, deps: AppDeps = {}): Fas
     importRoutes(api, files);
     documentRoutes(api, files);
     enforceabilityRoutes(api, { pool, config });
+    legalRoutes(api, pool);
   });
 
   // Meta's webhook: no user login; requests are checked by signature instead.

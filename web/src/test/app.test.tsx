@@ -639,6 +639,77 @@ describe('legal and Najiz filing', () => {
     expect(screen.getByRole('heading', { name: ar('najiz.stoppedTitle') })).toBeInTheDocument();
   });
 
+  it('company details: owners and admins check the owner ID and unified number', async () => {
+    const javed = await legalCaseOf('Javed Iqbal');
+    const saved: unknown[] = [];
+    const user = userEvent.setup();
+    renderAt(`/legal/case/${javed.debt_id}`, { ...withRole('admin'), saveNajizDetails: async (_id, input) => void saved.push(input) });
+    await user.click(await screen.findByRole('button', { name: en('case.editCompany') }));
+    const dialog = await screen.findByRole('dialog');
+    await user.type(within(dialog).getByLabelText(en('case.ownerId')), '2000000100');
+    await user.clear(within(dialog).getByLabelText(en('case.unified')));
+    await user.type(within(dialog).getByLabelText(en('case.unified')), '4030000000');
+    await user.click(within(dialog).getByRole('button', { name: en('common.save') }));
+    expect(within(dialog).getByText(en('case.ownerIdBad'))).toBeInTheDocument();
+    expect(within(dialog).getByText(en('case.unifiedBad'))).toBeInTheDocument();
+    expect(saved).toHaveLength(0);
+    await user.selectOptions(within(dialog).getByLabelText(en('case.ownerIdType')), 'iqama');
+    await user.clear(within(dialog).getByLabelText(en('case.unified')));
+    await user.type(within(dialog).getByLabelText(en('case.unified')), '7000000002');
+    await user.click(within(dialog).getByRole('button', { name: en('common.save') }));
+    await waitFor(() => expect(saved).toEqual([{ company: { owner_id_type: 'iqama', owner_id_number: '2000000100', unified_number: '7000000002' } }]));
+  });
+
+  it('staff do not see the company details button', async () => {
+    const javed = await legalCaseOf('Javed Iqbal');
+    renderAt(`/legal/case/${javed.debt_id}`);
+    expect(await screen.findByText(en('case.completeTitle'))).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: en('case.editCompany') })).not.toBeInTheDocument();
+  });
+
+  it('a missing file is uploaded from the case page, as a PDF only', async () => {
+    const bilal = await legalCaseOf('Bilal Ahmed');
+    const sent: unknown[] = [];
+    const base = await demoSource.legalCase(bilal.debt_id);
+    const user = userEvent.setup({ applyAccept: false });
+    renderAt(`/legal/case/${bilal.debt_id}`, {
+      ...demoSource,
+      legalCase: async () => ({ ...base, files: { ...base.files, cr: null }, row: { ...base.row, missing: ['cr_file', ...base.row.missing] } }),
+      uploadLegalFile: async (debtId, kind, file) => void sent.push({ debtId, kind, name: file.name }),
+    });
+    const input = await screen.findByLabelText(en('case.uploadOf', { file: en('case.file.cr') }));
+    await user.upload(input, new File(['x'], 'cr.png', { type: 'image/png' }));
+    expect(await screen.findByText(en('case.pdfOnly'))).toBeInTheDocument();
+    expect(sent).toHaveLength(0);
+    await user.upload(input, new File(['%PDF-1.4'], 'cr.pdf', { type: 'application/pdf' }));
+    await waitFor(() => expect(sent).toEqual([{ debtId: bilal.debt_id, kind: 'cr', name: 'cr.pdf' }]));
+  });
+
+  it('until filing from Talos is built, the dialog says to file by hand, in Arabic', async () => {
+    const user = userEvent.setup();
+    renderAt('/legal', {
+      ...demoSource,
+      startNajizRun: async () => { throw new ApiError(501, 'najiz_not_ready', 'Filing on Najiz from Talos comes next.'); },
+    }, 'ar');
+    await user.click(await screen.findByRole('button', { name: ar('legal.fileSelected', { count: 1 }) }));
+    const dialog = await screen.findByRole('dialog');
+    await user.click(within(dialog).getByRole('button', { name: ar('najiz.start') }));
+    expect(await within(dialog).findByText(ar('error.najiz_not_ready'))).toBeInTheDocument();
+  });
+
+  it('an approved case can get its request number by hand', async () => {
+    const nasir = await legalCaseOf('Nasir Mahmood');
+    const sent: unknown[] = [];
+    const user = userEvent.setup();
+    renderAt(`/legal/case/${nasir.debt_id}`, { ...demoSource, addLegalStatus: async (_id, input) => void sent.push(input) });
+    await user.click(await screen.findByRole('button', { name: en('case.addStatus') }));
+    const dialog = await screen.findByRole('dialog');
+    expect(within(dialog).getByLabelText(en('case.statusLabel'))).toHaveValue('submitted');
+    await user.type(within(dialog).getByLabelText(en('legal.col.request')), '401014800099999');
+    await user.click(within(dialog).getByRole('button', { name: en('common.save') }));
+    await waitFor(() => expect(sent).toEqual([{ status: 'submitted', najiz_request_number: '401014800099999' }]));
+  });
+
   it('a status entered by hand needs the Najiz request number', async () => {
     const omar = await legalCaseOf('Omar Farouk');
     const sent: unknown[] = [];

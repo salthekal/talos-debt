@@ -36,6 +36,7 @@ const DEBT = {
   imran: '66666666-6666-4666-8666-000000000001',
   rahim: '66666666-6666-4666-8666-000000000003',
   ahmed: '66666666-6666-4666-8666-000000000004',
+  javed: '66666666-6666-4666-8666-000000000099',
 };
 const DEBTOR = {
   imran: '33333333-3333-4333-8333-000000000001',
@@ -81,8 +82,8 @@ async function newPage({ lang = 'en', theme = 'light', width = 1366, height = 90
   page.on('console', (m) => {
     if (m.type() !== 'error') return;
     const text = m.text();
-    // Refused requests the test causes on purpose (401 before login, 4xx on wrong input) are expected.
-    if (/status of (401|400|403|404|409|410|423|429|503)/.test(text)) return;
+    // Refused requests the test causes on purpose (401 before login, 4xx on wrong input, 501 for filing from Talos, not built yet) are expected.
+    if (/status of (401|400|403|404|409|410|423|429|501|503)/.test(text)) return;
     consoleErrors.push(`${page.url()}: ${text}`);
   });
   return page;
@@ -470,6 +471,79 @@ await step('documents: upload a promissory note to a debt, then download the sam
   const listed = (await api(`/api/documents?debt_id=${DEBT.imran}`)).body.items;
   assert.equal(listed[0].doc_type, 'promissory_note');
   await page.context().close();
+});
+
+await step('legal: upload what Najiz needs, approve with the pledge, then add the request number by hand', async () => {
+  const api = await apiSession();
+  const before = (await api(`/api/legal/${DEBT.javed}`)).body;
+  assert.equal(before.row.stage, 'missing');
+  assert.deepEqual(before.row.missing, ['cr_file', 'note_file']);
+  assert.deepEqual(before.amounts, { claimed: '4200.00', received: '800.00' });
+
+  const page = await signedIn();
+  await page.goto(`${APP}/legal`);
+  await page.getByRole('link', { name: 'Javed Iqbal Demo' }).click();
+  await page.getByText(en['case.missingTitle'].replace('{count}', '2')).waitFor();
+  assert.equal(await page.getByRole('button', { name: en['case.approve'] }).isDisabled(), true);
+  // The company's commercial registration and the copy of the note, as PDFs.
+  await page.getByLabel(en['case.uploadOf'].replace('{file}', en['case.file.cr'])).setInputFiles(join(FILES, 'note.pdf'));
+  await toast(page, en['case.uploaded'].replace('{file}', 'note.pdf'));
+  await page.getByLabel(en['case.uploadOf'].replace('{file}', en['case.file.promissory_note'])).setInputFiles(join(FILES, 'note.pdf'));
+  await page.getByText(en['case.completeTitle']).waitFor();
+
+  // Approving needs the pledge.
+  await page.getByRole('button', { name: en['case.approve'] }).click();
+  await page.getByText(en['case.pledgeNeeded']).waitFor();
+  assert.equal((await api(`/api/legal/${DEBT.javed}`)).body.approval, null);
+  await page.getByLabel(en['case.pledge']).check();
+  await page.getByRole('button', { name: en['case.approve'] }).click();
+  await toast(page, en['case.approvedToast'].replace('{name}', 'Javed Iqbal Demo'));
+  const approved = (await api(`/api/legal/${DEBT.javed}`)).body;
+  assert.equal(approved.row.stage, 'approved');
+  assert.equal(approved.approval.contact_email, 'owner@demo.example');
+  assert.equal(approved.approval.contact_phone, '+966500000100');
+
+  // Filing from Talos is not built yet: the dialog says so in plain words.
+  await page.getByRole('button', { name: en['legal.fileOne'] }).click();
+  const dialog = page.getByRole('dialog');
+  await dialog.getByRole('button', { name: en['najiz.start'] }).click();
+  await dialog.getByText(en['error.najiz_not_ready']).waitFor();
+  await dialog.getByRole('button', { name: en['common.cancel'] }).click();
+
+  // Filed on Najiz by hand: the request number is added to the case.
+  await page.getByRole('button', { name: en['case.addStatus'] }).click();
+  const status = page.getByRole('dialog');
+  await status.getByLabel(en['legal.col.request']).fill('401014800099999');
+  await status.getByRole('button', { name: en['common.save'] }).click();
+  await toast(page, en['case.statusSaved']);
+  const filed = (await api(`/api/legal/${DEBT.javed}`)).body;
+  assert.equal(filed.row.stage, 'submitted');
+  assert.equal(filed.row.najiz_request_number, '401014800099999');
+  assert.deepEqual(filed.events.map((e) => e.status), ['submitted', 'approved']);
+  const debtor = (await api('/api/debtors/33333333-3333-4333-8333-000000000099')).body;
+  assert.equal(debtor.debts[0].status, 'in_legal');
+  await page.context().close();
+
+  // The Arabic "On Najiz" tab lists it with its number.
+  const arPage = await signedIn(OWNER, { lang: 'ar' });
+  await arPage.goto(`${APP}/legal/filed`);
+  await arPage.getByText('401014800099999').waitFor();
+  assert.deepEqual(await englishLeftInArabic(arPage), []);
+  await axe(arPage, '/legal/filed ar');
+  await arPage.context().close();
+});
+
+await step('legal: viewers and other clients cannot approve; amounts stay text', async () => {
+  const cookie = await sessionCookie(OWNER);
+  const res = await fetch(`${API}/api/legal`, { headers: { cookie } });
+  const items = (await res.json()).items;
+  for (const r of items) assert.match(r.amount_outstanding, /^\d+\.\d{2}$/);
+  const approve = await fetch(`${API}/api/legal/${DEBT.javed}/approve`, {
+    method: 'POST', headers: { cookie, 'x-talos': '1', 'content-type': 'application/json' },
+    body: JSON.stringify({ contact_email: 'owner@demo.example', contact_phone: '0500000100', pledge: true }),
+  });
+  assert.equal(approve.status, 409);
+  assert.equal((await approve.json()).error, 'already_approved');
 });
 
 await step('settings: change the follow-up rules; the change is saved and shown after a reload', async () => {
