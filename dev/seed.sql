@@ -33,6 +33,11 @@ VALUES ('11111111-1111-4111-8111-111111111111',
         'SA0000000000000000000000', 'Demo Bank', 'trial',
         '00000000-0000-4000-8000-000000000001', now(), 'active');
 
+-- Najiz details for the client (fake values; 0008).
+UPDATE app.clients SET owner_id_type = 'national_id', owner_id_number = '1000000100',
+                       unified_number = '7000000001'
+ WHERE id = '11111111-1111-4111-8111-111111111111';
+
 INSERT INTO app.users (id, client_id, full_name, email, phone, role) VALUES
  ('22222222-2222-4222-8222-000000000001', '11111111-1111-4111-8111-111111111111',
   'Demo Owner', 'owner@demo.example', '+966500000100', 'owner'),
@@ -65,6 +70,16 @@ INSERT INTO app.debtors (id, client_id, ref_code, id_type, id_number, full_name,
  ('33333333-3333-4333-8333-000000000005', '11111111-1111-4111-8111-111111111111', 'D-000005',
   'iqama', '2000000005', 'Suresh Kumar Demo', 'سوريش كومار', 'IN', 'en', 'left');
 
+-- Names in parts, as on the iqama or ID (Najiz step 3; 0008). Left empty for
+-- Rahim, so the screens show a debtor whose name still needs splitting.
+UPDATE app.debtors d SET first_name = v.f, father_name = v.fa, grandfather_name = v.g, family_name = v.l
+  FROM (VALUES ('33333333-3333-4333-8333-000000000001'::uuid, 'Imran', 'Ali', null, 'Khan'),
+               ('33333333-3333-4333-8333-000000000002'::uuid, 'فهد', 'عبدالله', 'محمد', 'التجريبي'),
+               ('33333333-3333-4333-8333-000000000004'::uuid, 'Ahmed', 'Hassan', null, 'Demo'),
+               ('33333333-3333-4333-8333-000000000005'::uuid, 'Suresh', null, null, 'Kumar'))
+       AS v(id, f, fa, g, l)
+ WHERE d.id = v.id;
+
 INSERT INTO app.debtor_phones (id, client_id, debtor_id, phone_e164, label, is_primary, has_whatsapp, status) VALUES
  ('44444444-4444-4444-8444-000000000001', '11111111-1111-4111-8111-111111111111', '33333333-3333-4333-8333-000000000001', '+966500000001', 'personal', true,  true, 'active'),
  ('44444444-4444-4444-8444-000000000002', '11111111-1111-4111-8111-111111111111', '33333333-3333-4333-8333-000000000001', '+966500000011', 'from platform', false, true, 'wrong_number'),
@@ -83,6 +98,10 @@ INSERT INTO app.instruments (id, client_id, debtor_id, type_code, reference_numb
   'paper_promissory_note', 'PAPER-DEMO-0003', '2024-11-15', 8000.00),
  ('55555555-5555-4555-8555-000000000003', '11111111-1111-4111-8111-111111111111', '33333333-3333-4333-8333-000000000005',
   'cheque', 'CHQ-DEMO-0005', '2025-06-10', 2500.00);
+
+-- Where each note was written (also its place of payment; 0008).
+UPDATE app.instruments SET issue_country = 'SA', issue_city = 'Jeddah'
+ WHERE id IN ('55555555-5555-4555-8555-000000000001', '55555555-5555-4555-8555-000000000002');
 
 -- ---------------------------------------------------------------------
 -- Debts: one per situation the system must handle
