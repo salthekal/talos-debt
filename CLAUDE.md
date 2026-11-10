@@ -47,6 +47,7 @@ The migrations, in order. Each one is applied once and never edited after it has
 | `0005_scheduler.sql` | On `follow_up_tasks`: `approved_by`/`approved_at`, `tries`, `last_error`, `finished_at`, and at most one open reminder and one open legal task per debt | Sal, **waiting for Karam's review** (PR #10) |
 | `0006_auth.sql` | Staff login: `auth` schema (passwords, sessions, reset and invitation links) reached only through `SECURITY DEFINER` functions; one account per email | Sal, **waiting for Karam's review** |
 | `0007_notification_details.sql` | `app.notifications.data` (jsonb): the facts a notification is built from, so the dashboard shows it in Arabic or English | Sal, **waiting for Karam's review** |
+| `0008_najiz_filing_data.sql` | What Najiz asks for: owner ID and unified number on `clients`, debtor name in parts, note place and due type on `instruments`, Najiz details on `legal_cases` (one open request per note), `legal_case_events` (status history, add only), document types `partners_decision` and `najiz_receipt` | Sal, **waiting for Karam's review** |
 
 Other files in `/db`: `db/roles/login_roles.sql` and `db/roles/check_login_roles.sql` (login roles for development and production, see "Setting up a new database"), written by Sal and reviewed by Karam.
 
@@ -167,7 +168,7 @@ This is the full list of steps to build the product. Finished steps are ticked a
 
 Owner: **S** = Sal (API, worker, web, AI), **K** = Karam (database, infrastructure, accounts), **S+K** = together.
 
-### Where things stand (last updated 9 November 2026)
+### Where things stand (last updated 10 November 2026)
 
 - Merged: the database, the back end API, WhatsApp reminders out, and the WhatsApp agent that reads replies and answers them.
 - Phase 2 (the scheduler) is built: automatic reminders (or staff-approved ones), promise checks, the legal-ready step and a daily summary. Tested with a fake WhatsApp sender only. Its migration `0005_scheduler.sql` is in Karam's area and waits for his review.
@@ -176,7 +177,8 @@ Owner: **S** = Sal (API, worker, web, AI), **K** = Karam (database, infrastructu
 - Phase 4 (the dashboard and CRM) is built and tested: login with email and password, overview, debtors, debtor page with documents, approvals, legal list, notifications, Excel import, adding debtors, settings and team, in Arabic and English, light and dark, phone and desktop. Its migrations `0006_auth.sql` and `0007_notification_details.sql` wait for Karam's review.
 - Nothing is hosted yet. There is no production database and no email sending set up (SMTP), so password emails are only written to a folder in development.
 - The database setup is ready for a managed database (no superuser needed): the migrations, then one script. It was tested on a simulated one; see "Setting up a new database".
-- Planned but not started: the usability check with a pilot client (4.0c), the website, subscriptions and billing (Phase 7), and the legal screens and Najiz filing flow (Phase 5; 5.4 waits for Sal's screen recording of the steps). The dashboard already has a Legal page listing debts ready for legal, where Phase 5 adds the filing.
+- **Working on now: Phase 5** (legal escalation and Najiz filing). The rest of Phase 1 waits for Meta business verification (0.7) and comes after Phase 5. Sal's screen recordings of the Najiz steps are written up in `docs/najiz-filing.md`. Its data is in migration `0008_najiz_filing_data.sql`, waiting for Karam's review. New screens are designed and approved by Sal before they are built.
+- Planned but not started: the usability check with a pilot client (4.0c), the website, subscriptions and billing (Phase 7). The dashboard already has a Legal page listing debts ready for legal, where Phase 5 adds the filing.
 - For Karam: the Excel import cannot read a workbook whose cell comments were saved by some tools (openpyxl, found by the end-to-end run); files saved by Excel are fine. `exceljs` fails on them in `api/src/import/parse.ts`.
 - Open decision: should the agent reply outside working hours (`AGENT_REPLY_OUTSIDE_HOURS`)? Today the reply is held and staff are alerted.
 
@@ -267,11 +269,23 @@ Design comes first: every page is designed and approved by Sal before it is buil
 
 ### Phase 5: Legal escalation
 
+Decided by Sal (10 November 2026), from his recordings of Najiz (`docs/najiz-filing.md`):
+- One Najiz request is one promissory note, for one debt of one debtor. The amount claimed is that debt's remaining amount; anything already paid is entered as received.
+- The client acts on Najiz as **legal representative** (ممثل نظامي) of the company, signing in with the owner's Nafath.
+- The contact email and mobile sent to Najiz are the owner's, and the client confirms them every time they approve a filing.
+- The place of payment is the place the note was written. The client gives that place for each note they upload.
+- The court is always the execution court (محكمة التنفيذ).
+- Status is checked by searching the Najiz execution list for the request number and opening the request.
+- Talos gives clients a promissory note template (Word file, no letterhead) to put their own company letterhead on.
+
+- [x] ~~5.0 The data Najiz asks for, in the database: owner ID and unified number, debtor name in parts, place and due type of each note, Najiz details and status history of each case (S, migration 0008 for K to review)~~ (`db/migrations/0008_najiz_filing_data.sql`, `dev/checks.sql` check 14)
+- [ ] 5.0b Promissory note template to download from the dashboard, as a Word file without any letterhead (S)
 - [ ] 5.1 Filing pack: PDF with debtor details, amount, instrument, Najiz request type and sub type, full contact history as proof, plus all documents (S)
 - [ ] 5.2 Client approval before a case moves past `ready` (database already enforces it) (S)
 - [ ] 5.3 Case status tracking, entered by hand at first (S)
-- [ ] 5.4 Najiz filing flow: every step from signing in with the client's approval (Nafath) to the page that shows the uploaded request and its number, following the Najiz rules above. **Waiting for Sal's screen recording of the steps** (S)
+- [ ] 5.4 Najiz filing flow: every step from signing in with the client's approval (Nafath) to the page that shows the uploaded request and its number, following the Najiz rules above. Steps in `docs/najiz-filing.md`. Several notes can be filed in one sign-in (S)
 - [ ] 5.5 Najiz status checks: read the status of submitted requests and tell the client in plain words what it means and what comes next. If each check needs a new Nafath approval, group checks so the client approves once per round (S)
+- [ ] 5.6 Services after filing (from the request page on Najiz): first "end the instrument" (إنهاء السند التنفيذي) when the debtor pays after filing; later grace or postpone, change the claim amount, transfer a seized amount (S)
 
 ### Phase 6: Production
 

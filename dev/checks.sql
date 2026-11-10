@@ -230,5 +230,72 @@ BEGIN
   END;
 END $$;
 
+-- ---------------------------------------------------------------------
+-- 14. Najiz filing data (0008)
+-- ---------------------------------------------------------------------
+DO $$
+DECLARE v_case uuid;
+BEGIN
+  -- The owner ID type must match the number (national ID starts with 1, iqama with 2).
+  BEGIN
+    UPDATE app.clients SET owner_id_type = 'iqama', owner_id_number = '1000000100'
+     WHERE id = '11111111-1111-4111-8111-111111111111';
+    RAISE EXCEPTION 'CHECK 14a FAILED: an iqama type with a national ID number was accepted';
+  EXCEPTION WHEN check_violation THEN NULL;
+  END;
+  BEGIN
+    UPDATE app.clients SET unified_number = '4030000000' WHERE id = '11111111-1111-4111-8111-111111111111';
+    RAISE EXCEPTION 'CHECK 14b FAILED: a unified number not starting with 7 was accepted';
+  EXCEPTION WHEN check_violation THEN NULL;
+  END;
+
+  -- One open Najiz request per note: the seed note NAFITH-DEMO-0001 backs Imran's debt.
+  INSERT INTO app.legal_cases (client_id, debt_id, instrument_id, amount_claimed)
+  VALUES ('11111111-1111-4111-8111-111111111111', '66666666-6666-4666-8666-000000000001',
+          '55555555-5555-4555-8555-000000000001', 3450.00)
+  RETURNING id INTO v_case;
+  BEGIN
+    INSERT INTO app.debts (id, client_id, debtor_id, instrument_id, ref_code, amount_original, reason)
+    VALUES ('66666666-6666-4666-8666-0000000000aa', '11111111-1111-4111-8111-111111111111',
+            '33333333-3333-4333-8333-000000000001', '55555555-5555-4555-8555-000000000001',
+            'DBT-CHECK-14', 100.00, 'Check 14');
+    INSERT INTO app.legal_cases (client_id, debt_id, instrument_id, amount_claimed)
+    VALUES ('11111111-1111-4111-8111-111111111111', '66666666-6666-4666-8666-0000000000aa',
+            '55555555-5555-4555-8555-000000000001', 100.00);
+    RAISE EXCEPTION 'CHECK 14c FAILED: one note was used for two open requests';
+  EXCEPTION WHEN unique_violation THEN NULL;
+  END;
+
+  -- A request number only after submitting.
+  BEGIN
+    UPDATE app.legal_cases SET najiz_request_number = '401014800000001' WHERE id = v_case;
+    RAISE EXCEPTION 'CHECK 14d FAILED: a request number was saved before submitting';
+  EXCEPTION WHEN check_violation THEN NULL;
+  END;
+
+  -- Status history: staff entries name the staff member, and the history cannot be changed.
+  BEGIN
+    INSERT INTO app.legal_case_events (client_id, legal_case_id, status, source)
+    VALUES ('11111111-1111-4111-8111-111111111111', v_case, 'ready', 'staff');
+    RAISE EXCEPTION 'CHECK 14e FAILED: a staff history entry without the staff member was accepted';
+  EXCEPTION WHEN check_violation THEN NULL;
+  END;
+  INSERT INTO app.legal_case_events (client_id, legal_case_id, status, source, recorded_by)
+  VALUES ('11111111-1111-4111-8111-111111111111', v_case, 'ready', 'staff', '22222222-2222-4222-8222-000000000002');
+  BEGIN
+    UPDATE app.legal_case_events SET note = 'changed' WHERE legal_case_id = v_case;
+    RAISE EXCEPTION 'CHECK 14f FAILED: status history was changed';
+  EXCEPTION WHEN insufficient_privilege THEN NULL;
+  END;
+
+  -- The other client cannot see this history.
+  PERFORM set_config('app.client_id', 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', true);
+  ASSERT (SELECT count(*) FROM app.legal_case_events) = 0,
+    'CHECK 14g FAILED: another client can see the status history';
+  PERFORM set_config('app.client_id', '11111111-1111-4111-8111-111111111111', true);
+
+  RAISE NOTICE 'PASS 14: Najiz filing data follows its rules';
+END $$;
+
 ROLLBACK;
 \echo 'All database checks passed.'
