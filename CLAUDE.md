@@ -119,6 +119,15 @@ Other files in `/db`: `db/roles/login_roles.sql` and `db/roles/check_login_roles
 - **API refusals in plain words:** `errorText` (`components/ui.tsx`) turns known codes into both languages; otherwise it shows the API's message, which names the field or rule.
 - **Tests:** `npm test` (screen tests with sample data, English and Arabic) and `npm run e2e` (a real browser against the real API and a fresh dev database: every page in both languages, light and dark, desktop and phone, with accessibility checks, and every action checked through the API). Both run in CI. Add to them with every screen or action.
 
+### Legal and Najiz (Phase 5)
+
+- **One readiness check:** `api/src/legal/readiness.ts` (`missingForNajiz`) lists what Najiz still needs for a debt, in the order Najiz asks for it. The Legal list, the case page and the approval all use it, so they always agree. Najiz takes PDF files only, so a photo of a paper does not count. The establishment contract is optional on Najiz.
+- **Routes** (`api/src/routes/legal.ts`): `GET /api/legal`, `GET /api/legal/:debtId`, `PATCH .../details` (debtor name in parts, the note's city and due type; company details for owners and admins only), `POST .../approve` (5.2), `POST .../status` (5.3). The id is the debt id.
+- **Approval** needs nothing missing, the pledge, and the owner's email and mobile (confirmed each time). It creates the case with `amount_claimed` = what is left and `amount_received` = the note's amount minus that, in SQL. Details are locked after approval.
+- **Status by hand** needs approval first and the Najiz request number (digits only) for anything but withdrawn. On Najiz statuses (submitted, order issued, measures applied) the debt becomes `in_legal`. Every change adds a row to `legal_case_events` (add only).
+- The browser only ever gets the last four digits of the owner's ID number.
+- Until 5.4, staff file on Najiz themselves and add the request number by hand; the screens say so in plain words.
+
 ### Getting data in (Phase 3)
 
 - **One set of rules for every value that comes in.** `api/src/intake/normalize.ts` (phones, ID numbers, amounts, dates, list values in English or Arabic) and `api/src/intake/records.ts` (a whole debtor, debt or instrument) are used by both manual entry and the Excel import. Change a rule there, never in a route, so both stay the same.
@@ -177,8 +186,9 @@ Owner: **S** = Sal (API, worker, web, AI), **K** = Karam (database, infrastructu
 - Phase 4 (the dashboard and CRM) is built and tested: login with email and password, overview, debtors, debtor page with documents, approvals, legal list, notifications, Excel import, adding debtors, settings and team, in Arabic and English, light and dark, phone and desktop. Its migrations `0006_auth.sql` and `0007_notification_details.sql` wait for Karam's review.
 - Nothing is hosted yet. There is no production database and no email sending set up (SMTP), so password emails are only written to a folder in development.
 - The database setup is ready for a managed database (no superuser needed): the migrations, then one script. It was tested on a simulated one; see "Setting up a new database".
-- **Working on now: Phase 5** (legal escalation and Najiz filing). The rest of Phase 1 waits for Meta business verification (0.7) and comes after Phase 5. Sal's screen recordings of the Najiz steps are written up in `docs/najiz-filing.md`. Its data is in migration `0008_najiz_filing_data.sql`, waiting for Karam's review. New screens are designed and approved by Sal before they are built.
+- **Working on now: Phase 5** (legal escalation and Najiz filing). The rest of Phase 1 waits for Meta business verification (0.7) and comes after Phase 5. Sal's screen recordings of the Najiz steps are written up in `docs/najiz-filing.md`. Its data is in migration `0008_najiz_filing_data.sql`, waiting for Karam's review. Built: the Legal page, the case page with approval (5.2), status by hand (5.3) and the note template (5.0b), designs approved by Sal. Next: the filing pack PDF (5.1), then filing from Talos (5.4).
 - Planned but not started: the usability check with a pilot client (4.0c), the website, subscriptions and billing (Phase 7). The dashboard already has a Legal page listing debts ready for legal, where Phase 5 adds the filing.
+- For Karam: the document upload (`api/src/storage/documents.ts` `DOC_TYPES` and `CLIENT_DOC_TYPES` in `routes/documents.ts`) does not take the new types `partners_decision` and `najiz_receipt` from migration 0008 yet. Partners' decisions are optional on Najiz, so this blocks nothing today; the receipt is needed for 5.4.
 - For Karam: the Excel import cannot read a workbook whose cell comments were saved by some tools (openpyxl, found by the end-to-end run); files saved by Excel are fine. `exceljs` fails on them in `api/src/import/parse.ts`.
 - Open decision: should the agent reply outside working hours (`AGENT_REPLY_OUTSIDE_HOURS`)? Today the reply is held and staff are alerted.
 
@@ -279,11 +289,11 @@ Decided by Sal (10 November 2026), from his recordings of Najiz (`docs/najiz-fil
 - Talos gives clients a promissory note template (Word file, no letterhead) to put their own company letterhead on.
 
 - [x] ~~5.0 The data Najiz asks for, in the database: owner ID and unified number, debtor name in parts, place and due type of each note, Najiz details and status history of each case (S, migration 0008 for K to review)~~ (`db/migrations/0008_najiz_filing_data.sql`, `dev/checks.sql` check 14)
-- [ ] 5.0b Promissory note template to download from the dashboard, as a Word file without any letterhead (S)
+- [x] ~~5.0b Promissory note template to download from the dashboard, as a Word file without any letterhead (S)~~ (`web/src/assets/promissory-note-template.docx`, Legal page)
 - [ ] 5.1 Filing pack: PDF with debtor details, amount, instrument, Najiz request type and sub type, full contact history as proof, plus all documents (S)
-- [ ] 5.2 Client approval before a case moves past `ready` (database already enforces it) (S)
-- [ ] 5.3 Case status tracking, entered by hand at first (S)
-- [ ] 5.4 Najiz filing flow: every step from signing in with the client's approval (Nafath) to the page that shows the uploaded request and its number, following the Najiz rules above. Steps in `docs/najiz-filing.md`. Several notes can be filed in one sign-in (S)
+- [x] ~~5.2 Client approval before a case moves past `ready` (database already enforces it) (S)~~ (`POST /api/legal/:debtId/approve`, `web/src/pages/LegalCase.tsx`)
+- [x] ~~5.3 Case status tracking, entered by hand at first (S)~~ (`POST /api/legal/:debtId/status`, `app.legal_case_events`)
+- [ ] 5.4 Najiz filing flow: every step from signing in with the client's approval (Nafath) to the page that shows the uploaded request and its number, following the Najiz rules above. Steps in `docs/najiz-filing.md`. Several notes can be filed in one sign-in. The screens are built; `POST /api/najiz/runs` answers 501 until the robot is built (S)
 - [ ] 5.5 Najiz status checks: read the status of submitted requests and tell the client in plain words what it means and what comes next. If each check needs a new Nafath approval, group checks so the client approves once per round (S)
 - [ ] 5.6 Services after filing (from the request page on Najiz): first "end the instrument" (إنهاء السند التنفيذي) when the debtor pays after filing; later grace or postpone, change the claim amount, transfer a seized amount (S)
 

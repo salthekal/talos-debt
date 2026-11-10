@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { createContext, useContext } from 'react';
 import type { DataSource, DebtQuery, DisputeDecision, PaymentInput } from './source';
-import type { ApproveFilingInput, DocType, FollowUpRules, LegalStatusInput, NajizDetailsInput, NewDebtorInput, User } from './types';
+import type { ApproveFilingInput, NajizUploadKind, DocType, FollowUpRules, LegalStatusInput, NajizDetailsInput, NewDebtorInput, User } from './types';
 
 export const SourceContext = createContext<DataSource | null>(null);
 
@@ -118,4 +118,6 @@ export const useSaveNajizDetails = () => useAction((s, a: { debtId: string; inpu
 export const useApproveFiling = () => useAction((s, a: { debtId: string; input: ApproveFilingInput }) => s.approveFiling(a.debtId, a.input), LEGAL_VIEWS);
 export const useStartNajizRun = () => useAction((s, debtIds: string[]) => s.startNajizRun(debtIds), LEGAL_VIEWS);
 export const useCancelNajizRun = () => useAction((s, id: string) => s.cancelNajizRun(id), [...LEGAL_VIEWS, 'najizRun']);
+export const useUploadLegalFile = () =>
+  useAction((s, a: { debtId: string; kind: NajizUploadKind; file: File }) => s.uploadLegalFile(a.debtId, a.kind, a.file), [...LEGAL_VIEWS, 'documents']);
 export const useAddLegalStatus = () => useAction((s, a: { debtId: string; input: LegalStatusInput }) => s.addLegalStatus(a.debtId, a.input), LEGAL_VIEWS);

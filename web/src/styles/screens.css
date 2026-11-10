@@ -1762,3 +1762,11 @@ input[type='time'] {
     margin-inline-start: 0;
   }
 }
+.nj-upload {
+  margin-inline-start: auto;
+  flex: none;
+  cursor: pointer;
+}
+.nj-upload.is-busy {
+  opacity: 0.6;
+}
