@@ -250,10 +250,15 @@ describe('status entered by hand (5.3)', () => {
   });
 });
 
-describe('filing from Talos (5.4)', () => {
-  it('is not built yet, and says what to do instead', async () => {
-    const res = await send('POST', '/api/najiz/runs', { debt_ids: [IMRAN_DEBT] });
-    expect(res.statusCode).toBe(501);
-    expect(res.json().error).toBe('najiz_not_ready');
+describe('files Najiz takes', () => {
+  it('a PDF over 0.95 MB counts as missing, because Najiz refuses it', () => {
+    const facts: ReadinessFacts = {
+      owner_id_number: '1000000100', unified_number: '7000000001', iban: 'SA0000000000000000000000', bank_name: 'Demo Bank',
+      cr_mime: 'application/pdf', cr_size: 900_000, debtor_first_name: 'Imran', debtor_family_name: 'Khan', debtor_id_type: 'iqama',
+      debtor_id_number: '2000000001', debtor_nationality: 'PK', instrument_type: 'nafith_promissory_note', note_mime: 'application/pdf',
+      note_size: 996_147, issue_city: 'Jeddah', issue_date: '2025-03-01', due_date: null, due_on_demand: true,
+    };
+    expect(missingForNajiz(facts)).toEqual([]);
+    expect(missingForNajiz({ ...facts, cr_size: 1_200_000, note_size: 996_148 })).toEqual(['cr_file', 'note_file']);
   });
 });

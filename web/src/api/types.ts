@@ -165,11 +165,14 @@ export interface Notification {
 export interface NotificationData {
   event?:
     | 'receipt' | 'dispute' | 'needs_reply' | 'reply_held' | 'legal_ready' | 'replied_after_last'
-    | 'promise_broken' | 'promise_partly' | 'not_sent' | 'send_failed' | 'maybe_not_sent' | 'summary';
+    | 'promise_broken' | 'promise_partly' | 'not_sent' | 'send_failed' | 'maybe_not_sent' | 'summary'
+    | 'najiz_filed' | 'najiz_stopped';
   name?: string;
   ref?: string | null;
   amount?: string;
   reminders?: number;
+  /** Najiz request number (najiz_filed). */
+  number?: string;
   date?: string;
   debtor_id?: string;
   summary?: Partial<Record<'reminders_sent' | 'replies' | 'promises' | 'payments_to_review' | 'disputes' | 'legal_ready' | 'waiting_approval', number>>;
@@ -389,7 +392,7 @@ export interface ApproveFilingInput {
   pledge: true;
 }
 
-export type NajizRunStage = 'starting' | 'waiting_nafath' | 'filing' | 'done' | 'stopped' | 'expired';
+export type NajizRunStage = 'starting' | 'waiting_nafath' | 'working' | 'done' | 'stopped' | 'expired';
 export type NajizCaseStep = 'waiting' | 'request_type' | 'requester' | 'debtor' | 'content' | 'sending' | 'sent' | 'stopped';
 
 /** One sign-in to Najiz that files one or more approved notes. */
@@ -399,6 +402,8 @@ export interface NajizRun {
   /** The two-digit number the owner chooses in the Nafath app. */
   nafath_number: string | null;
   nafath_expires_at: string | null;
+  /** True when the number was also sent to the owner on WhatsApp (needs a template approved by Meta). */
+  nafath_sent: boolean;
   owner_phone_last4: string;
   started_at: string;
   cases: {
@@ -406,11 +411,12 @@ export interface NajizRun {
     full_name: string;
     ref_code: string;
     amount: Money;
+    /** 'sending' on a finished run: "send" may have been pressed, so the note may be on Najiz. */
     step: NajizCaseStep;
     request_number: string | null;
   }[];
   /** Why the robot stopped, in plain words, when stage is 'stopped'. */
-  stop_reason: 'unexpected_page' | 'captcha' | 'najiz_error' | 'details_differ' | 'cancelled' | null;
+  stop_reason: 'unexpected_page' | 'captcha' | 'najiz_error' | 'details_differ' | 'company_not_found' | 'cancelled' | 'worker_lost' | null;
 }
 
 export interface LegalStatusInput {

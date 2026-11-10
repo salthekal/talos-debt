@@ -81,7 +81,7 @@ export interface DataSource {
   saveNajizDetails(debtId: string, input: NajizDetailsInput): Promise<void>;
   approveFiling(debtId: string, input: ApproveFilingInput): Promise<void>;
   /** Starts one Najiz sign-in that files the given approved debts. */
-  startNajizRun(debtIds: string[]): Promise<NajizRun>;
+  startNajizRun(debtIds: string[], opts?: { checkedNotOnNajiz?: boolean }): Promise<NajizRun>;
   najizRun(id: string): Promise<NajizRun>;
   cancelNajizRun(id: string): Promise<void>;
   /** Upload a PDF Najiz needs: the company's papers, or the copy of this debt's note. */

@@ -606,11 +606,11 @@ describe('legal and Najiz filing', () => {
     expect(screen.queryByRole('button', { name: en('case.editName') })).not.toBeInTheDocument();
   });
 
-  it('filing signs in with Nafath: the number is shown and sent to the owner', async () => {
+  it('filing signs in with Nafath: the number is shown, and the owner is asked to choose it', async () => {
     const started: string[][] = [];
     const run = {
       id: 'run-t', stage: 'waiting_nafath' as const, nafath_number: '47', nafath_expires_at: new Date(Date.now() + 60_000).toISOString(),
-      owner_phone_last4: '0100', started_at: new Date().toISOString(), stop_reason: null,
+      nafath_sent: false, owner_phone_last4: '0100', started_at: new Date().toISOString(), stop_reason: null,
       cases: [{ debt_id: 'x', full_name: 'Nasir Mahmood', ref_code: 'DBT-2026-0019', amount: '2250.00', step: 'waiting' as const, request_number: null }],
     };
     const user = userEvent.setup();
@@ -620,14 +620,16 @@ describe('legal and Najiz filing', () => {
     expect(within(dialog).getByText('Nasir Mahmood')).toBeInTheDocument();
     await user.click(within(dialog).getByRole('button', { name: en('najiz.start') }));
     expect(await within(dialog).findByLabelText(en('najiz.nafathNumber', { n: '47' }))).toBeInTheDocument();
-    expect(within(dialog).getByText(en('najiz.nafathSent', { last4: '0100' }))).toBeInTheDocument();
+    // Not sent on WhatsApp until Meta approves a template: the screen does not claim it was.
+    expect(within(dialog).getByText(en('najiz.nafathTell'))).toBeInTheDocument();
+    expect(within(dialog).queryByText(en('najiz.nafathSent', { last4: '0100' }))).not.toBeInTheDocument();
     expect(started).toHaveLength(1);
     expect(started[0]).toHaveLength(1);
   });
 
   it('a filing that stopped says why, in Arabic', async () => {
     const run = {
-      id: 'run-s', stage: 'stopped' as const, nafath_number: null, nafath_expires_at: null, owner_phone_last4: '0100',
+      id: 'run-s', stage: 'stopped' as const, nafath_number: null, nafath_expires_at: null, nafath_sent: false, owner_phone_last4: '0100',
       started_at: new Date().toISOString(), stop_reason: 'captcha' as const,
       cases: [{ debt_id: 'x', full_name: 'Nasir Mahmood', ref_code: 'DBT-2026-0019', amount: '2250.00', step: 'stopped' as const, request_number: null }],
     };
@@ -685,16 +687,41 @@ describe('legal and Najiz filing', () => {
     await waitFor(() => expect(sent).toEqual([{ debtId: bilal.debt_id, kind: 'cr', name: 'cr.pdf' }]));
   });
 
-  it('until filing from Talos is built, the dialog says to file by hand, in Arabic', async () => {
+  it('a note that may already be on Najiz: staff confirm they checked Najiz before filing again', async () => {
+    const calls: { ids: string[]; checked?: boolean }[] = [];
     const user = userEvent.setup();
     renderAt('/legal', {
       ...demoSource,
-      startNajizRun: async () => { throw new ApiError(501, 'najiz_not_ready', 'Filing on Najiz from Talos comes next.'); },
+      startNajizRun: async (ids, opts) => {
+        calls.push({ ids, checked: opts?.checkedNotOnNajiz });
+        if (!opts?.checkedNotOnNajiz) throw new ApiError(409, 'najiz_check_first', 'A note may already be on Najiz.');
+        throw new ApiError(409, 'najiz_busy', 'Busy');
+      },
     }, 'ar');
     await user.click(await screen.findByRole('button', { name: ar('legal.fileSelected', { count: 1 }) }));
     const dialog = await screen.findByRole('dialog');
     await user.click(within(dialog).getByRole('button', { name: ar('najiz.start') }));
-    expect(await within(dialog).findByText(ar('error.najiz_not_ready'))).toBeInTheDocument();
+    expect(await within(dialog).findByText(ar('error.najiz_check_first'))).toBeInTheDocument();
+    const start = within(dialog).getByRole('button', { name: ar('najiz.start') });
+    expect(start).toBeDisabled();
+    await user.click(within(dialog).getByLabelText(ar('najiz.checkedNotThere')));
+    await user.click(start);
+    expect(await within(dialog).findByText(ar('error.najiz_busy'))).toBeInTheDocument();
+    expect(calls.map((c) => c.checked)).toEqual([false, true]);
+  });
+
+  it('a stopped filing marks a note that may be on Najiz', async () => {
+    const run = {
+      id: 'run-m', stage: 'stopped' as const, nafath_number: null, nafath_expires_at: null, nafath_sent: false, owner_phone_last4: '0100',
+      started_at: new Date().toISOString(), stop_reason: 'worker_lost' as const,
+      cases: [{ debt_id: 'x', full_name: 'Nasir Mahmood', ref_code: 'DBT-2026-0019', amount: '2250.00', step: 'sending' as const, request_number: null }],
+    };
+    const user = userEvent.setup();
+    renderAt('/legal', { ...demoSource, startNajizRun: async () => run, najizRun: async () => run });
+    await user.click(await screen.findByRole('button', { name: en('legal.fileSelected', { count: 1 }) }));
+    await user.click(within(await screen.findByRole('dialog')).getByRole('button', { name: en('najiz.start') }));
+    expect(await screen.findByText(en('najiz.stop.worker_lost'))).toBeInTheDocument();
+    expect(screen.getByText(en('najiz.maybeSent'))).toBeInTheDocument();
   });
 
   it('an approved case can get its request number by hand', async () => {

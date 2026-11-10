@@ -20,6 +20,7 @@ Interface languages: Arabic (right to left) and English. Debtor message language
 | `/api` | Back end API and WhatsApp webhook | Sal |
 | `/api/src/intake`, `/api/src/import`, `/api/src/storage` and their routes (`debtors`, `imports`, `documents`, `enforceability`) | Getting data in (Phase 3): manual entry, Excel import, file storage, enforceability | Karam (agreed with Sal) |
 | `/api/src/scheduler` | Scheduler that sends reminders, checks promises and marks debts ready for legal (runs as its own process: `npm run scheduler`). It lives in `/api` to share its database, WhatsApp and stop-rule code | Sal |
+| `/api/src/najiz` | Najiz worker and robot that file on Najiz for clients (runs as its own process: `npm run najiz`) | Sal |
 | `/web` | Client dashboard and CRM (React) | Sal |
 | `/docs` | Schema diagram and documentation | Both |
 
@@ -48,6 +49,7 @@ The migrations, in order. Each one is applied once and never edited after it has
 | `0006_auth.sql` | Staff login: `auth` schema (passwords, sessions, reset and invitation links) reached only through `SECURITY DEFINER` functions; one account per email | Sal, **waiting for Karam's review** |
 | `0007_notification_details.sql` | `app.notifications.data` (jsonb): the facts a notification is built from, so the dashboard shows it in Arabic or English | Sal, **waiting for Karam's review** |
 | `0008_najiz_filing_data.sql` | What Najiz asks for: owner ID and unified number on `clients`, debtor name in parts, note place and due type on `instruments`, Najiz details on `legal_cases` (one open request per note), `legal_case_events` (status history, add only), document types `partners_decision` and `najiz_receipt` | Sal, **waiting for Karam's review** |
+| `0009_najiz_runs.sql` | `najiz_runs` (one Najiz sign-in: stage, the Nafath number only while it is shown, why it stopped) and `najiz_run_items` (each note filed in it, step by step, with its request number); one running sign-in per client | Sal, **waiting for Karam's review** |
 
 Other files in `/db`: `db/roles/login_roles.sql` and `db/roles/check_login_roles.sql` (login roles for development and production, see "Setting up a new database"), written by Sal and reviewed by Karam.
 
@@ -121,13 +123,19 @@ Other files in `/db`: `db/roles/login_roles.sql` and `db/roles/check_login_roles
 
 ### Legal and Najiz (Phase 5)
 
-- **One readiness check:** `api/src/legal/readiness.ts` (`missingForNajiz`) lists what Najiz still needs for a debt, in the order Najiz asks for it. The Legal list, the case page and the approval all use it, so they always agree. Najiz takes PDF files only, so a photo of a paper does not count. The establishment contract is optional on Najiz.
+- **One readiness check:** `api/src/legal/readiness.ts` (`missingForNajiz`) lists what Najiz still needs for a debt, in the order Najiz asks for it. The Legal list, the case page, the approval and the filing all use it, so they always agree. Najiz takes PDF files of at most 0.95 MB, so a photo of a paper or a bigger file does not count. The establishment contract is optional on Najiz.
 - **Routes** (`api/src/routes/legal.ts`): `GET /api/legal`, `GET /api/legal/:debtId`, `PATCH .../details` (debtor name in parts, the note's city and due type; company details for owners and admins only), `POST .../approve` (5.2), `POST .../status` (5.3). The id is the debt id.
 - **Approval** needs nothing missing, the pledge, and the owner's email and mobile (confirmed each time). It creates the case with `amount_claimed` = what is left and `amount_received` = the note's amount minus that, in SQL. Details are locked after approval.
 - **Status by hand** needs approval first and the Najiz request number (digits only) for anything but withdrawn. On Najiz statuses (submitted, order issued, measures applied) the debt becomes `in_legal`. Every change adds a row to `legal_case_events` (add only).
 - The browser only ever gets the last four digits of the owner's ID number.
 - **Filing pack (5.1):** `api/src/legal/pack.ts` builds an Arabic page (English labels) from the case, the contact history and the list of files with their SHA-256, prints it with Chromium (`api/src/legal/pdf.ts`, behind the `PdfRenderer` interface, no network, no JavaScript), then joins the files with pdf-lib: PDFs page by page, JPEG and PNG as pages. A file that cannot be read is listed as not attached; the pack is still made. It is saved as a `legal_pack` document and linked from `legal_cases.pack_document_id`. Read inside the transaction, print and store outside it. Chromium is needed wherever the API runs (`npx playwright install --with-deps chromium`).
-- Until 5.4, staff file on Najiz themselves and add the request number by hand; the screens say so in plain words.
+- **Filing from Talos (5.4):** the dashboard starts a run (`POST /api/najiz/runs` with approved debt ids; `GET /api/najiz/runs/:id`; `POST .../cancel`). The Najiz worker, its own process (`npm run najiz`, needs both database URLs and Chromium), claims it, signs in with the owner's ID, shows the Nafath number on the dashboard, and files each note step by step. Only claiming and recovering runs use the worker connection; the rest runs in `withTenant` as `system` with the person who started it.
+- **The robot** (`api/src/najiz/robot.ts`, behind the `NajizSite` interface in `site.ts`) finds everything by the Arabic words Najiz shows, all kept in `WORDS`. Before every action it checks it is on the page it expects; on the review page it checks every value against Talos before pressing send. Anything else (a captcha, a changed page, a Najiz error, a value that differs) stops the run and tells staff (Najiz rule 6). It never guesses.
+- **Never file a note twice by accident:** if Talos stops after pressing send without reading the request number (no confirmation, a crash), the note keeps the step `sending` and a new filing of it is refused (`najiz_check_first`) until staff check Najiz and either add the number by hand or confirm it is not there. A run whose worker stops answering for `NAJIZ_STALE_MINUTES` is stopped the same way.
+- **The session:** a fresh browser context per run, only in memory, closed when the run ends. The Nafath number is kept only while it is shown. Logs hold run ids and plain words, never page content or session data.
+- After filing: the case becomes `submitted` with its number, the debt `in_legal`, a `najiz_filing` event is added, a picture of Najiz's confirmation is saved as a `najiz_receipt` document, and the client gets a `najiz_filed` notification.
+- Tests run the real robot in a real Chromium against a fake Najiz (`api/test/fake-najiz.ts`) with the same pages and words. Change the fake together with `WORDS`. Tests never open the real Najiz.
+- The Nafath number is not sent to the owner on WhatsApp yet: that needs a template approved by Meta (step 1.10). The dashboard asks staff to tell the owner instead.
 
 ### Getting data in (Phase 3)
 
@@ -178,7 +186,7 @@ This is the full list of steps to build the product. Finished steps are ticked a
 
 Owner: **S** = Sal (API, worker, web, AI), **K** = Karam (database, infrastructure, accounts), **S+K** = together.
 
-### Where things stand (last updated 10 November 2026)
+### Where things stand (last updated 11 November 2026)
 
 - Merged: the database, the back end API, WhatsApp reminders out, and the WhatsApp agent that reads replies and answers them.
 - Phase 2 (the scheduler) is built: automatic reminders (or staff-approved ones), promise checks, the legal-ready step and a daily summary. Tested with a fake WhatsApp sender only. Its migration `0005_scheduler.sql` is in Karam's area and waits for his review.
@@ -187,7 +195,7 @@ Owner: **S** = Sal (API, worker, web, AI), **K** = Karam (database, infrastructu
 - Phase 4 (the dashboard and CRM) is built and tested: login with email and password, overview, debtors, debtor page with documents, approvals, legal list, notifications, Excel import, adding debtors, settings and team, in Arabic and English, light and dark, phone and desktop. Its migrations `0006_auth.sql` and `0007_notification_details.sql` wait for Karam's review.
 - Nothing is hosted yet. There is no production database and no email sending set up (SMTP), so password emails are only written to a folder in development.
 - The database setup is ready for a managed database (no superuser needed): the migrations, then one script. It was tested on a simulated one; see "Setting up a new database".
-- **Working on now: Phase 5** (legal escalation and Najiz filing). The rest of Phase 1 waits for Meta business verification (0.7) and comes after Phase 5. Sal's screen recordings of the Najiz steps are written up in `docs/najiz-filing.md`. Its data is in migration `0008_najiz_filing_data.sql`, waiting for Karam's review. Built: the Legal page, the case page with approval (5.2), status by hand (5.3) and the note template (5.0b), designs approved by Sal. Built too: the filing pack PDF (5.1). Next: filing from Talos (5.4).
+- **Working on now: Phase 5** (legal escalation and Najiz filing). The rest of Phase 1 waits for Meta business verification (0.7) and comes after Phase 5. Sal's screen recordings of the Najiz steps are written up in `docs/najiz-filing.md`. Its data is in migration `0008_najiz_filing_data.sql`, waiting for Karam's review. Built: the Legal page, the case page with approval (5.2), status by hand (5.3) and the note template (5.0b), designs approved by Sal. Built too: the filing pack PDF (5.1) and filing from Talos (5.4, migration `0009_najiz_runs.sql` waiting for Karam's review), tested against a fake Najiz only: the first real filing needs Sal watching (5.4b). Next: status checks (5.5).
 - Planned but not started: the usability check with a pilot client (4.0c), the website, subscriptions and billing (Phase 7). The dashboard already has a Legal page listing debts ready for legal, where Phase 5 adds the filing.
 - For Karam: the document upload (`api/src/storage/documents.ts` `DOC_TYPES` and `CLIENT_DOC_TYPES` in `routes/documents.ts`) does not take the new types `partners_decision` and `najiz_receipt` from migration 0008 yet. Partners' decisions are optional on Najiz, so this blocks nothing today; the receipt is needed for 5.4.
 - For Karam: the Excel import cannot read a workbook whose cell comments were saved by some tools (openpyxl, found by the end-to-end run); files saved by Excel are fine. `exceljs` fails on them in `api/src/import/parse.ts`.
@@ -234,7 +242,7 @@ Run these in order, as the admin account the provider gives you (it does not nee
 - [x] ~~1.7 Log every AI call in `ai.agent_runs` (S)~~
 - [x] ~~1.8 Tests with a fake AI and a fake WhatsApp sender, fresh database per test file (S)~~ (`api/test/`)
 - [ ] 1.9 First real end-to-end test: Gemini key, public tunnel, webhook set in Meta, reminder to Sal's phone and a reply back (S)
-- [ ] 1.10 Write the real reminder templates (Arabic, English, Urdu, Bengali, Hindi) and submit them to Meta for approval (S)
+- [ ] 1.10 Write the real reminder templates (Arabic, English, Urdu, Bengali, Hindi) and submit them to Meta for approval (S). Also a template that sends the Nafath number to the client's owner (5.4)
 - [ ] 1.11 Send held replies: replies held outside working hours go out when hours start, or staff send them from the dashboard (S)
 - [ ] 1.12 Retry job for webhook events that failed or were never processed (S)
 - [ ] 1.13 Receipts: download the image from Meta, store it securely, let the AI read amount, date and bank, create a payment `pending_approval` for staff (S, storage from K)
@@ -248,7 +256,7 @@ Run these in order, as the admin account the provider gives you (it does not nee
 - [x] ~~2.3 Promise checks: mark a promise kept or broken on its date and restart reminders when broken (S)~~ (`api/src/scheduler/tasks.ts`)
 - [x] ~~2.4 After the last attempt with no reply, mark the debt ready for legal and alert the client (S)~~ (`api/src/scheduler/tasks.ts`)
 - [x] ~~2.5 Daily summary notification for each client (S)~~ (`api/src/scheduler/summary.ts`)
-- [ ] 2.6 Run the scheduler in production next to the API, as its own process (K, with 6.8)
+- [ ] 2.6 Run the scheduler in production next to the API, as its own process, and the Najiz worker the same way with Chromium installed (K, with 6.8)
 
 ### Phase 3: Getting data in
 
@@ -294,7 +302,8 @@ Decided by Sal (10 November 2026), from his recordings of Najiz (`docs/najiz-fil
 - [x] ~~5.1 Filing pack: PDF with debtor details, amount, instrument, Najiz request type and sub type, full contact history as proof, plus all documents (S)~~ (`api/src/legal/pack.ts`, `POST /api/legal/:debtId/pack`)
 - [x] ~~5.2 Client approval before a case moves past `ready` (database already enforces it) (S)~~ (`POST /api/legal/:debtId/approve`, `web/src/pages/LegalCase.tsx`)
 - [x] ~~5.3 Case status tracking, entered by hand at first (S)~~ (`POST /api/legal/:debtId/status`, `app.legal_case_events`)
-- [ ] 5.4 Najiz filing flow: every step from signing in with the client's approval (Nafath) to the page that shows the uploaded request and its number, following the Najiz rules above. Steps in `docs/najiz-filing.md`. Several notes can be filed in one sign-in. The screens are built; `POST /api/najiz/runs` answers 501 until the robot is built (S)
+- [x] ~~5.4 Najiz filing flow: every step from signing in with the client's approval (Nafath) to the page that shows the uploaded request and its number, following the Najiz rules above. Steps in `docs/najiz-filing.md`. Several notes can be filed in one sign-in (S, migration 0009 for K to review)~~ (`api/src/najiz/`, `api/src/routes/najiz.ts`, `npm run najiz`)
+- [ ] 5.4b First filing on the real Najiz, with Sal watching: confirm every word in `WORDS` (`api/src/najiz/robot.ts`) against the real pages, fix what differs, then file one real note (S)
 - [ ] 5.5 Najiz status checks: read the status of submitted requests and tell the client in plain words what it means and what comes next. If each check needs a new Nafath approval, group checks so the client approves once per round (S)
 - [ ] 5.6 Services after filing (from the request page on Najiz): first "end the instrument" (إنهاء السند التنفيذي) when the debtor pays after filing; later grace or postpone, change the claim amount, transfer a seized amount (S)
 

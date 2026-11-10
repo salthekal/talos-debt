@@ -14,7 +14,8 @@ import { NotFound } from './NotFound';
 import { StageBadge } from './Legal';
 
 /** Najiz takes PDF files of at most 0.95 MB for the company documents. */
-const NAJIZ_MAX_BYTES = 950 * 1024;
+/** The largest file Najiz takes, 0.95 MB, as the API checks it. */
+const NAJIZ_MAX_BYTES = Math.floor(0.95 * 1024 * 1024);
 const SAUDI_CITIES = ['Jeddah', 'Riyadh', 'Makkah', 'Madinah', 'Dammam', 'Khobar', 'Taif', 'Tabuk', 'Hail', 'Buraydah', 'Abha', 'Jazan', 'Najran', 'Yanbu'];
 const MANUAL_STATUSES: LegalStatus[] = ['submitted', 'order_issued', 'measures_applied', 'settled', 'closed', 'withdrawn'];
 
@@ -295,9 +296,10 @@ function FileLine({ kind, doc, missing, optional, upload }: { kind: NajizFileKin
   const { t, locale } = useI18n();
   const toast = useToast();
   const send = useUploadLegalFile();
-  const canUpload = upload && kind !== 'partners_decision' && (!doc || missing);
   const size = doc ? new Intl.NumberFormat(locale, { maximumFractionDigits: 1 }).format(Number(doc.size_bytes) / 1_048_576) : '';
-  const tooBig = doc && kind !== 'promissory_note' && Number(doc.size_bytes) > NAJIZ_MAX_BYTES;
+  // Najiz refuses files over 0.95 MB: a bigger one has to be replaced.
+  const tooBig = !!doc && Number(doc.size_bytes) > NAJIZ_MAX_BYTES;
+  const canUpload = upload && kind !== 'partners_decision' && (!doc || missing || tooBig);
   return (
     <Line
       label={t(`case.file.${kind}` as MessageKey)}

@@ -12,11 +12,13 @@ export interface LegalRowDb {
   debt_id: string; debtor_id: string; full_name: string; ref_code: string;
   amount_outstanding: string; amount_original: string; debt_status: string; legal_ready_at: string;
   instrument_type: string | null; instrument_id: string | null;
-  owner_id_number: string | null; unified_number: string | null; iban: string | null; bank_name: string | null; cr_mime: string | null;
+  owner_id_number: string | null; unified_number: string | null; iban: string | null; bank_name: string | null; cr_mime: string | null; cr_size: number | null;
   first_name: string | null; family_name: string | null; id_type: string; id_number: string | null; nationality: string | null;
-  note_mime: string | null; issue_city: string | null; issue_date: string | null; due_date: string | null; due_on_demand: boolean | null;
+  note_mime: string | null; note_size: number | null; issue_city: string | null; issue_date: string | null; due_date: string | null; due_on_demand: boolean | null;
   case_id: string | null; case_status: string | null; najiz_request_number: string | null; najiz_status: string | null;
   najiz_circuit: string | null; submitted_at: string | null; najiz_status_checked_at: string | null;
+  /** The case is in a Najiz sign-in that is running now (5.4). */
+  filing: boolean;
 }
 
 /** Every legal debt, or one. A debt counts once it is ready for legal, in legal, or has a case. */
@@ -26,20 +28,30 @@ export async function loadRows(db: Db, debtId?: string): Promise<LegalRowDb[]> {
             d.status AS debt_status, d.status_changed_at AS legal_ready_at,
             i.type_code AS instrument_type, i.id AS instrument_id,
             c.owner_id_number, c.unified_number, c.iban, c.bank_name,
-            (SELECT x.mime_type FROM app.documents x
-              WHERE x.debtor_id IS NULL AND x.doc_type = 'cr'
-              ORDER BY (x.mime_type = 'application/pdf') DESC, x.created_at DESC LIMIT 1) AS cr_mime,
+            cr.mime_type AS cr_mime, cr.size_bytes::int AS cr_size,
             dr.first_name, dr.family_name, dr.id_type, dr.id_number, dr.nationality,
-            (SELECT x.mime_type FROM app.documents x
-              WHERE x.doc_type = 'promissory_note' AND (x.debt_id = d.id OR (i.id IS NOT NULL AND x.instrument_id = i.id))
-              ORDER BY (x.mime_type = 'application/pdf') DESC, x.created_at DESC LIMIT 1) AS note_mime,
+            nf.mime_type AS note_mime, nf.size_bytes::int AS note_size,
             i.issue_city, i.issue_date::text AS issue_date, i.due_date::text AS due_date, i.due_on_demand,
             lc.id AS case_id, lc.status AS case_status, lc.najiz_request_number, lc.najiz_status, lc.najiz_circuit,
-            lc.submitted_at, lc.najiz_status_checked_at
+            lc.submitted_at, lc.najiz_status_checked_at,
+            EXISTS (SELECT 1 FROM app.najiz_run_items ri JOIN app.najiz_runs nr ON nr.id = ri.run_id
+                     WHERE ri.legal_case_id = lc.id AND nr.kind = 'file'
+                       AND nr.stage IN ('starting', 'waiting_nafath', 'working')) AS filing
        FROM app.debts d
        JOIN app.debtors dr ON dr.id = d.debtor_id
        JOIN app.clients c ON c.id = d.client_id
        LEFT JOIN app.instruments i ON i.id = d.instrument_id
+       -- The files Najiz takes are PDFs: the newest PDF first, so a newer photo does not hide it.
+       LEFT JOIN LATERAL (
+         SELECT x.mime_type, x.size_bytes FROM app.documents x
+          WHERE x.debtor_id IS NULL AND x.doc_type = 'cr'
+          ORDER BY (x.mime_type = 'application/pdf') DESC, x.created_at DESC LIMIT 1
+       ) cr ON true
+       LEFT JOIN LATERAL (
+         SELECT x.mime_type, x.size_bytes FROM app.documents x
+          WHERE x.doc_type = 'promissory_note' AND (x.debt_id = d.id OR (i.id IS NOT NULL AND x.instrument_id = i.id))
+          ORDER BY (x.mime_type = 'application/pdf') DESC, x.created_at DESC LIMIT 1
+       ) nf ON true
        LEFT JOIN LATERAL (
          SELECT l.* FROM app.legal_cases l WHERE l.debt_id = d.id
           ORDER BY (${OPEN_CASE}) DESC, l.created_at DESC LIMIT 1
@@ -54,9 +66,9 @@ export async function loadRows(db: Db, debtId?: string): Promise<LegalRowDb[]> {
 
 export function missingOf(r: LegalRowDb): NajizField[] {
   return missingForNajiz({
-    owner_id_number: r.owner_id_number, unified_number: r.unified_number, iban: r.iban, bank_name: r.bank_name, cr_mime: r.cr_mime,
+    owner_id_number: r.owner_id_number, unified_number: r.unified_number, iban: r.iban, bank_name: r.bank_name, cr_mime: r.cr_mime, cr_size: r.cr_size,
     debtor_first_name: r.first_name, debtor_family_name: r.family_name, debtor_id_type: r.id_type, debtor_id_number: r.id_number,
-    debtor_nationality: r.nationality, instrument_type: r.instrument_type, note_mime: r.note_mime,
+    debtor_nationality: r.nationality, instrument_type: r.instrument_type, note_mime: r.note_mime, note_size: r.note_size,
     issue_city: r.issue_city, issue_date: r.issue_date, due_date: r.due_date, due_on_demand: r.due_on_demand,
   });
 }
@@ -64,7 +76,9 @@ export function missingOf(r: LegalRowDb): NajizField[] {
 export function toRow(r: LegalRowDb) {
   const missing = missingOf(r);
   const before = !r.case_status || r.case_status === 'ready';
-  const stage = before ? (missing.length ? 'missing' : 'to_approve') : r.case_status;
+  const stage = before
+    ? (missing.length ? 'missing' : 'to_approve')
+    : r.case_status === 'approved' && r.filing ? 'filing' : r.case_status;
   return {
     debt_id: r.debt_id, debtor_id: r.debtor_id, full_name: r.full_name, ref_code: r.ref_code,
     amount_outstanding: r.amount_outstanding, instrument_type: r.instrument_type ?? 'none',
