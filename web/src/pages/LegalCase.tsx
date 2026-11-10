@@ -1,7 +1,7 @@
-import { AlertCircle, ArrowLeft, Building2, CheckCircle2, CircleDashed, FileText, History, Landmark, Pencil, PlusCircle, ScrollText, ShieldCheck, Upload, User as UserIcon } from 'lucide-react';
+import { AlertCircle, ArrowLeft, Building2, CheckCircle2, CircleDashed, Download, FileStack, FileText, History, Landmark, Pencil, PlusCircle, ScrollText, ShieldCheck, Upload, User as UserIcon } from 'lucide-react';
 import { useState, type ReactNode } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import { useAddLegalStatus, useApproveFiling, useLegalCase, useMe, useSaveNajizDetails, useUploadLegalFile } from '../api/hooks';
+import { useAddLegalStatus, useApproveFiling, useLegalCase, useMakePack, useMe, useSaveNajizDetails, useSource, useUploadLegalFile } from '../api/hooks';
 import { ApiError } from '../api/source';
 import type { DocumentInfo, LegalCaseDetail, LegalStatus, NajizField, NajizFileKind, NajizUploadKind } from '../api/types';
 import { useCanEdit } from '../components/actions';
@@ -195,6 +195,8 @@ export function LegalCasePage() {
               )}
             </section>
           )}
+
+          <PackCard c={c} canEdit={canEdit} />
 
           <section className="panel case-card">
             <h2 className="panel-title">
@@ -390,6 +392,55 @@ function Events({ c }: { c: LegalCaseDetail }) {
         </li>
       ))}
     </ol>
+  );
+}
+
+// ------------------------------------------------------------- filing pack
+
+function PackCard({ c, canEdit }: { c: LegalCaseDetail; canEdit: boolean }) {
+  const { t, formatDate, formatTime } = useI18n();
+  const toast = useToast();
+  const source = useSource();
+  const make = useMakePack();
+  const latest = c.pack ? source.documentUrl(c.pack.id) : null;
+  return (
+    <section className="panel case-card case-pack">
+      <h2 className="panel-title">
+        <FileStack size={18} aria-hidden="true" />
+        {t('case.pack')}
+      </h2>
+      <p className="panel-hint">{t('case.packHint')}</p>
+      {c.pack && (
+        <p className="case-pack-latest">
+          {t('case.packLatest', { when: `${formatDate(c.pack.created_at)} ${formatTime(c.pack.created_at)}` })}
+          {latest && (
+            <a className="btn btn-quiet btn-small" href={latest} download={c.pack.file_name}>
+              <Download size={15} aria-hidden="true" />
+              {t('case.packDownload')}
+            </a>
+          )}
+        </p>
+      )}
+      {canEdit && (
+        <button
+          type="button"
+          className="btn btn-quiet btn-block"
+          disabled={make.isPending}
+          onClick={() =>
+            make.mutate(c.row.debt_id, {
+              onSuccess: (r) => {
+                toast(r.notAttached ? t('case.packMadeMissing', { count: r.notAttached }) : t('case.packMade'));
+                if (r.url) window.location.assign(r.url);
+              },
+              onError: (err) => toast(errorText(err, t), 'error'),
+            })
+          }
+        >
+          <FileStack size={17} aria-hidden="true" />
+          {make.isPending ? t('case.packMaking') : t(c.pack ? 'case.packAgain' : 'case.packMake')}
+        </button>
+      )}
+    </section>
   );
 }
 

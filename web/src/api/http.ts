@@ -163,5 +163,9 @@ export const httpSource: DataSource = {
   addLegalStatus: async (debtId, input) => {
     await request('POST', `/api/legal/${debtId}/status`, input);
   },
+  makePack: async (debtId) => {
+    const res = await request<{ document: DocumentInfo; not_attached: string[] }>('POST', `/api/legal/${debtId}/pack`, {});
+    return { url: `/api/documents/${res.document.id}/download`, notAttached: res.not_attached.length };
+  },
   noteTemplateUrl: () => noteTemplate,
 };

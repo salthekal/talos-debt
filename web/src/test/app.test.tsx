@@ -710,6 +710,23 @@ describe('legal and Najiz filing', () => {
     await waitFor(() => expect(sent).toEqual([{ status: 'submitted', najiz_request_number: '401014800099999' }]));
   });
 
+  it('the filing pack is made from the case page, and says when a file could not be attached', async () => {
+    const javed = await legalCaseOf('Javed Iqbal');
+    const made: string[] = [];
+    const user = userEvent.setup();
+    renderAt(`/legal/case/${javed.debt_id}`, { ...demoSource, makePack: async (id) => (made.push(id), { url: null, notAttached: 2 }) });
+    await user.click(await screen.findByRole('button', { name: en('case.packMake') }));
+    expect(await screen.findByText(en('case.packMadeMissing', { count: 2 }))).toBeInTheDocument();
+    expect(made).toEqual([javed.debt_id]);
+  });
+
+  it('viewers can see the pack card but not make one', async () => {
+    const javed = await legalCaseOf('Javed Iqbal');
+    renderAt(`/legal/case/${javed.debt_id}`, withRole('viewer'));
+    expect(await screen.findByText(en('case.pack'))).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: en('case.packMake') })).not.toBeInTheDocument();
+  });
+
   it('a status entered by hand needs the Najiz request number', async () => {
     const omar = await legalCaseOf('Omar Farouk');
     const sent: unknown[] = [];

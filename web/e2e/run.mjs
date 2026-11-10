@@ -522,6 +522,15 @@ await step('legal: upload what Najiz needs, approve with the pledge, then add th
   assert.deepEqual(filed.events.map((e) => e.status), ['submitted', 'approved']);
   const debtor = (await api('/api/debtors/33333333-3333-4333-8333-000000000099')).body;
   assert.equal(debtor.debts[0].status, 'in_legal');
+
+  // The filing pack: a real PDF with the case and the two uploaded files.
+  await page.getByRole('button', { name: en['case.packMake'] }).click();
+  await toast(page, en['case.packMade']);
+  const pack = (await api(`/api/legal/${DEBT.javed}`)).body.pack;
+  assert.equal(pack.doc_type, 'legal_pack');
+  const packRes = await fetch(`${API}/api/documents/${pack.id}/download`, { headers: { cookie: await sessionCookie(OWNER) } });
+  assert.equal(packRes.status, 200);
+  assert.equal(Buffer.from(await packRes.arrayBuffer()).subarray(0, 5).toString(), '%PDF-');
   await page.context().close();
 
   // The Arabic "On Najiz" tab lists it with its number.
