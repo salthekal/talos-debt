@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { createContext, useContext } from 'react';
 import type { DataSource, DebtQuery, DisputeDecision, PaymentInput } from './source';
-import type { DocType, FollowUpRules, NewDebtorInput, User } from './types';
+import type { ApproveFilingInput, DocType, FollowUpRules, LegalStatusInput, NajizDetailsInput, NewDebtorInput, User } from './types';
 
 export const SourceContext = createContext<DataSource | null>(null);
 
@@ -62,10 +62,29 @@ export const useTemplates = () => {
   return useQuery({ queryKey: ['templates'], queryFn: () => s.templates(), staleTime: 5 * 60_000 });
 };
 
+export const useLegal = () => {
+  const s = useSource();
+  return useQuery({ queryKey: ['legal'], queryFn: () => s.legal() });
+};
+export const useLegalCase = (debtId: string) => {
+  const s = useSource();
+  return useQuery({ queryKey: ['legalCase', debtId], queryFn: () => s.legalCase(debtId), retry: false });
+};
+/** A Najiz sign-in in progress: read again every 1.5 seconds until it is finished. */
+export const useNajizRun = (id: string | null) => {
+  const s = useSource();
+  return useQuery({
+    queryKey: ['najizRun', id],
+    queryFn: () => s.najizRun(id!),
+    enabled: !!id,
+    refetchInterval: (q) => (q.state.data && ['done', 'stopped', 'expired'].includes(q.state.data.stage) ? false : 1500),
+  });
+};
+
 // ------------------------------------------------------------------ actions
 
 /** After anything that changes a debt, the numbers and lists that show it are fetched again. */
-const DEBT_VIEWS = ['totals', 'summary', 'debts', 'debtor', 'approvals', 'waitingReminders', 'notifications'];
+const DEBT_VIEWS = ['totals', 'summary', 'debts', 'debtor', 'approvals', 'waitingReminders', 'notifications', 'legal', 'legalCase'];
 
 function useAction<A, R>(fn: (s: DataSource, a: A) => Promise<R>, refresh: string[] = DEBT_VIEWS) {
   const s = useSource();
@@ -94,3 +113,9 @@ export const useAddDebtor = () => useAction((s, d: NewDebtorInput) => s.addDebto
 export const useUploadDocument = () =>
   useAction((s, a: { debtorId: string; debtId?: string; docType: DocType; file: File }) => s.uploadDocument(a), ['documents']);
 export const useConfirmImport = () => useAction((s, id: string) => s.confirmImport(id));
+const LEGAL_VIEWS = ['legal', 'legalCase', 'debts', 'debtor', 'summary', 'totals'];
+export const useSaveNajizDetails = () => useAction((s, a: { debtId: string; input: NajizDetailsInput }) => s.saveNajizDetails(a.debtId, a.input), LEGAL_VIEWS);
+export const useApproveFiling = () => useAction((s, a: { debtId: string; input: ApproveFilingInput }) => s.approveFiling(a.debtId, a.input), LEGAL_VIEWS);
+export const useStartNajizRun = () => useAction((s, debtIds: string[]) => s.startNajizRun(debtIds), LEGAL_VIEWS);
+export const useCancelNajizRun = () => useAction((s, id: string) => s.cancelNajizRun(id), [...LEGAL_VIEWS, 'najizRun']);
+export const useAddLegalStatus = () => useAction((s, a: { debtId: string; input: LegalStatusInput }) => s.addLegalStatus(a.debtId, a.input), LEGAL_VIEWS);

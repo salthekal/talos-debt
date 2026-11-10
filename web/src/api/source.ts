@@ -1,4 +1,5 @@
 import type {
+  ApproveFilingInput, LegalCaseDetail, LegalRow, LegalStatusInput, NajizDetailsInput, NajizRun,
   Approvals, DebtorDetail, DebtPage, DebtStatus, FollowUpRules, ImportReport, Me, NewDebtorInput, Notification, Summary,
   DocType, DocumentInfo, Task, Template, Totals, User, WaitingReminders,
 } from './types';
@@ -73,6 +74,20 @@ export interface DataSource {
   uploadImport(file: File): Promise<ImportReport>;
   confirmImport(id: string): Promise<ImportReport>;
   cancelImport(id: string): Promise<void>;
+
+  // Legal and Najiz (Phase 5)
+  legal(): Promise<LegalRow[]>;
+  legalCase(debtId: string): Promise<LegalCaseDetail>;
+  saveNajizDetails(debtId: string, input: NajizDetailsInput): Promise<void>;
+  approveFiling(debtId: string, input: ApproveFilingInput): Promise<void>;
+  /** Starts one Najiz sign-in that files the given approved debts. */
+  startNajizRun(debtIds: string[]): Promise<NajizRun>;
+  najizRun(id: string): Promise<NajizRun>;
+  cancelNajizRun(id: string): Promise<void>;
+  /** A status entered by hand (5.3), for example from a Najiz text message. */
+  addLegalStatus(debtId: string, input: LegalStatusInput): Promise<void>;
+  /** The promissory note template, a Word file with no letterhead (5.0b). */
+  noteTemplateUrl(): string;
 }
 
 /** An error from the API, with the message to show and, for forms, the fields that failed. */

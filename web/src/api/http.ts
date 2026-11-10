@@ -6,7 +6,8 @@
  * request forgery protection).
  */
 import { ApiError, type DataSource, type DebtQuery } from './source';
-import type { DocumentInfo, ImportReport } from './types';
+import noteTemplate from '../assets/promissory-note-template.docx?url';
+import type { DocumentInfo, ImportReport, LegalCaseDetail, LegalRow, NajizRun } from './types';
 
 /** Called when the session ends (401), so the app can show the login page. */
 let onSessionEnded: () => void = () => undefined;
@@ -136,4 +137,23 @@ export const httpSource: DataSource = {
   cancelImport: async (id) => {
     await request('POST', `/api/imports/${id}/cancel`, {});
   },
+
+  // Legal and Najiz (Phase 5). The API side comes with steps 5.1 to 5.4.
+  legal: async () => (await request<{ items: LegalRow[] }>('GET', '/api/legal')).items,
+  legalCase: (debtId) => request<LegalCaseDetail>('GET', `/api/legal/${debtId}`),
+  saveNajizDetails: async (debtId, input) => {
+    await request('PATCH', `/api/legal/${debtId}/details`, input);
+  },
+  approveFiling: async (debtId, input) => {
+    await request('POST', `/api/legal/${debtId}/approve`, input);
+  },
+  startNajizRun: async (debtIds) => (await request<{ run: NajizRun }>('POST', '/api/najiz/runs', { debt_ids: debtIds })).run,
+  najizRun: async (id) => (await request<{ run: NajizRun }>('GET', `/api/najiz/runs/${id}`)).run,
+  cancelNajizRun: async (id) => {
+    await request('POST', `/api/najiz/runs/${id}/cancel`, {});
+  },
+  addLegalStatus: async (debtId, input) => {
+    await request('POST', `/api/legal/${debtId}/status`, input);
+  },
+  noteTemplateUrl: () => noteTemplate,
 };

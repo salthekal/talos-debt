@@ -274,3 +274,143 @@ export interface NewDebtorInput {
   phones: string[];
   debts: { amount: string; reason: string; due_date?: string; instrument?: { type: string; reference_number?: string } }[];
 }
+
+// --------------------------------------------- legal and Najiz (Phase 5)
+
+/** A legal case status in the database (`app.legal_cases.status`). */
+export type LegalStatus =
+  | 'ready' | 'approved' | 'submitted' | 'order_issued' | 'measures_applied' | 'settled' | 'closed' | 'withdrawn';
+
+/**
+ * Where a debt stands on its way to Najiz, as the Legal page shows it:
+ * details missing, ready for the client to approve, approved and waiting
+ * to be filed, being filed now, then the case status after filing.
+ */
+export type LegalStage =
+  | 'missing' | 'to_approve' | 'approved' | 'filing'
+  | 'submitted' | 'order_issued' | 'measures_applied' | 'settled' | 'closed' | 'withdrawn';
+
+/** One thing Najiz asks for (docs/najiz-filing.md). */
+export type NajizField =
+  | 'owner_id' | 'unified_number' | 'iban' | 'cr_file' | 'contract_file'
+  | 'debtor_name' | 'debtor_id' | 'debtor_nationality'
+  | 'note_file' | 'note_place' | 'note_date' | 'note_due';
+
+export interface LegalRow {
+  debt_id: string;
+  debtor_id: string;
+  full_name: string;
+  ref_code: string;
+  amount_outstanding: Money;
+  instrument_type: string;
+  case_id: string | null;
+  stage: LegalStage;
+  /** What Najiz needs that is still missing; empty when complete. */
+  missing: NajizField[];
+  najiz_request_number: string | null;
+  najiz_status: string | null;
+  najiz_circuit: string | null;
+  submitted_at: string | null;
+  najiz_status_checked_at: string | null;
+  legal_ready_at: string;
+}
+
+export interface LegalEvent {
+  id: string;
+  status: LegalStatus;
+  /** As Najiz shows it, when it was read from Najiz. */
+  najiz_status: string | null;
+  note: string | null;
+  source: 'staff' | 'najiz_filing' | 'najiz_check';
+  recorded_by_name: string | null;
+  recorded_at: string;
+}
+
+export type NajizFileKind = 'cr' | 'establishment_contract' | 'partners_decision' | 'promissory_note';
+
+/** Everything Najiz will receive for one debt, and what is missing. */
+export interface LegalCaseDetail {
+  row: LegalRow;
+  company: {
+    legal_name: string;
+    unified_number: string | null;
+    owner_name: string;
+    owner_id_type: 'national_id' | 'iqama' | null;
+    /** Only the last four digits are ever sent to the browser. */
+    owner_id_last4: string | null;
+    owner_email: string;
+    owner_phone: string;
+    bank_name: string | null;
+    iban: string | null;
+  };
+  debtor: {
+    full_name: string;
+    id_type: string;
+    id_number: string;
+    nationality: string | null;
+    first_name: string | null;
+    father_name: string | null;
+    grandfather_name: string | null;
+    family_name: string | null;
+    phone: string | null;
+  };
+  note: {
+    type: string;
+    reference_number: string | null;
+    issue_date: string | null;
+    due_date: string | null;
+    due_on_demand: boolean;
+    issue_country: string | null;
+    issue_city: string | null;
+    face_amount: Money | null;
+  };
+  /** What is claimed (the remaining amount) and what was already received. */
+  amounts: { claimed: Money; received: Money };
+  files: Record<NajizFileKind, DocumentInfo | null>;
+  approval: { approved_by_name: string; approved_at: string; contact_email: string; contact_phone: string } | null;
+  events: LegalEvent[];
+}
+
+/** Details the client can fill in from the case page. */
+export interface NajizDetailsInput {
+  company?: { owner_id_type: 'national_id' | 'iqama'; owner_id_number: string; unified_number: string };
+  debtor?: { first_name: string; father_name?: string; grandfather_name?: string; family_name: string };
+  note?: { issue_city: string; due_on_demand: boolean; due_date?: string | null };
+}
+
+export interface ApproveFilingInput {
+  contact_email: string;
+  contact_phone: string;
+  /** The client agrees to the same pledge Najiz asks for. */
+  pledge: true;
+}
+
+export type NajizRunStage = 'starting' | 'waiting_nafath' | 'filing' | 'done' | 'stopped' | 'expired';
+export type NajizCaseStep = 'waiting' | 'request_type' | 'requester' | 'debtor' | 'content' | 'sending' | 'sent' | 'stopped';
+
+/** One sign-in to Najiz that files one or more approved notes. */
+export interface NajizRun {
+  id: string;
+  stage: NajizRunStage;
+  /** The two-digit number the owner chooses in the Nafath app. */
+  nafath_number: string | null;
+  nafath_expires_at: string | null;
+  owner_phone_last4: string;
+  started_at: string;
+  cases: {
+    debt_id: string;
+    full_name: string;
+    ref_code: string;
+    amount: Money;
+    step: NajizCaseStep;
+    request_number: string | null;
+  }[];
+  /** Why the robot stopped, in plain words, when stage is 'stopped'. */
+  stop_reason: 'unexpected_page' | 'captcha' | 'najiz_error' | 'details_differ' | 'cancelled' | null;
+}
+
+export interface LegalStatusInput {
+  status: LegalStatus;
+  najiz_request_number?: string;
+  note?: string;
+}
