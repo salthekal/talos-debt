@@ -15,6 +15,7 @@ export function notificationText(n: Notification, t: I18n['t']): string {
     ref: d.ref ?? '',
     amount: d.amount ? groupDigits(d.amount) : '',
     reminders: d.reminders ?? 0,
+    number: d.number ?? '',
   };
   const event = d.event ?? legacyEvent(n);
   switch (event) {
@@ -39,6 +40,8 @@ export function notificationText(n: Notification, t: I18n['t']): string {
     case 'not_sent':
     case 'send_failed':
     case 'maybe_not_sent':
+    case 'najiz_filed':
+    case 'najiz_stopped':
       return t(`note.${event}`, vars);
     default:
       return n.title;
@@ -67,6 +70,6 @@ export function notificationLink(n: Notification): string | null {
   const event = n.data?.event ?? legacyEvent(n);
   if (event === 'receipt' || event === 'dispute') return '/approvals';
   if (n.data?.debtor_id) return `/debtors/${n.data.debtor_id}`;
-  if (event === 'legal_ready') return '/legal';
+  if (event === 'legal_ready' || event === 'najiz_stopped') return '/legal';
   return null;
 }

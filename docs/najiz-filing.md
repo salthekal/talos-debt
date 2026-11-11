@@ -80,3 +80,24 @@ does not show payments; those are in the digital wallet (المحفظة الرق
 Services on a request (5.6): "إنهاء السند التنفيذي" (end the instrument, for
 example when the debtor paid), "إمهال - تأجيل", "تحويل مبلغ محجوز",
 "تعديل مبلغ المطالبة", "خدمات التظلم", add or remove an agent, other services.
+
+## The robot (5.4)
+
+`api/src/najiz/robot.ts` follows sections A and B above. Every Arabic word it
+looks for is in `WORDS` at the top of that file.
+
+- Taken from the recordings: the menu and button words (أعمال, تسجيل الدخول عبر
+  النفاذ الوطني, الحسابات المفعلة, التنفيذ, طلب جديد, تقديم طلب تنفيذ إلكتروني,
+  the five step names, تحقق, حفظ وإرسال, تم تقديم الطلب بنجاح) and the values chosen
+  (تنفيذ مالي, أوراق تجارية, سند لأمر, بالنيابة عن جهة اعتبارية, ممثل نظامي, محكمة التنفيذ).
+- To confirm on the first real filing (5.4b): the exact label of each field
+  (for example whether the amount fields are labelled "(ريال)" and "(هللة)"),
+  the yes or no questions, the date format Najiz takes, and how the Nafath
+  number is shown. If a word is wrong, the robot stops before sending and says
+  which word it could not find; change it in `WORDS` and in the fake Najiz
+  (`api/test/fake-najiz.ts`).
+- Cities typed in English on the case page are changed to their Arabic names
+  for Najiz's list (`cityInArabic`); a city not in that list stops the run
+  with a message to write it in Arabic. Countries use their Arabic names.
+- The bank chosen on Najiz must be written as Najiz lists it; otherwise the run
+  stops with "not in the Najiz list".

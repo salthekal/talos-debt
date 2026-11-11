@@ -355,7 +355,7 @@ function runNow(entry: { run: NajizRun; startedMs: number }): NajizRun {
     return { ...c, step, request_number: step === 'sent' ? `40101480${String(51600 + i * 137).padStart(7, '0')}` : null };
   });
   const finished = cases.every((c) => c.step === 'sent');
-  const next: NajizRun = { ...run, stage: finished ? 'done' : 'filing', nafath_number: null, cases };
+  const next: NajizRun = { ...run, stage: finished ? 'done' : 'working', nafath_number: null, cases };
   if (finished) {
     entry.run = next;
     for (const c of cases) {
@@ -627,7 +627,7 @@ export const demoSource: DataSource = {
     }
     for (const d of picked) legalSamples.get(d.debt_id)!.stage = 'filing';
     const run: NajizRun = {
-      id: `run-${legalRuns.length + 1}`, stage: 'starting', nafath_number: null, nafath_expires_at: null, owner_phone_last4: OWNER.phone.slice(-4),
+      id: `run-${legalRuns.length + 1}`, stage: 'starting', nafath_number: null, nafath_expires_at: null, nafath_sent: false, owner_phone_last4: OWNER.phone.slice(-4),
       started_at: new Date().toISOString(), stop_reason: null,
       cases: picked.map((d) => ({ debt_id: d.debt_id, full_name: d.full_name, ref_code: d.ref_code, amount: d.amount_outstanding, step: 'waiting', request_number: null })),
     };

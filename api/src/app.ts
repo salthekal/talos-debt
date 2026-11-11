@@ -10,6 +10,7 @@ import { importRoutes } from './routes/imports.js';
 import { legalRoutes } from './routes/legal.js';
 import { ChromiumPdfRenderer, type PdfRenderer } from './legal/pdf.js';
 import { UPLOAD_LIMITS } from './routes/upload.js';
+import { najizRoutes } from './routes/najiz.js';
 import { LocalDiskStorage, type FileStorage } from './storage/storage.js';
 import { messageRoutes } from './routes/messages.js';
 import { paymentRoutes } from './routes/payments.js';
@@ -98,6 +99,7 @@ export function buildApp(config: Config, pool: pg.Pool, deps: AppDeps = {}): Fas
     documentRoutes(api, files);
     enforceabilityRoutes(api, { pool, config });
     legalRoutes(api, { pool, storage, pdf });
+    najizRoutes(api, pool);
   });
 
   // Meta's webhook: no user login; requests are checked by signature instead.

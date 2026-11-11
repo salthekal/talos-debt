@@ -14,6 +14,9 @@ export type NajizField = (typeof NAJIZ_FIELDS)[number];
 /** Najiz takes PDF files only. */
 export const PDF = 'application/pdf';
 
+/** The largest file Najiz takes: 0.95 MB. */
+export const NAJIZ_MAX_BYTES = Math.floor(0.95 * 1024 * 1024);
+
 /** Instruments filed through this flow (Najiz: أوراق تجارية, سند لأمر). */
 export const PROMISSORY_NOTES = ['nafith_promissory_note', 'paper_promissory_note'];
 
@@ -26,6 +29,8 @@ export interface ReadinessFacts {
   iban: string | null;
   bank_name: string | null;
   cr_mime: string | null;
+  /** Size in bytes of that file, when known. Najiz refuses files over NAJIZ_MAX_BYTES. */
+  cr_size?: number | null;
   debtor_first_name: string | null;
   debtor_family_name: string | null;
   debtor_id_type: string;
@@ -33,6 +38,7 @@ export interface ReadinessFacts {
   debtor_nationality: string | null;
   instrument_type: string | null;
   note_mime: string | null;
+  note_size?: number | null;
   issue_city: string | null;
   issue_date: string | null;
   due_date: string | null;
@@ -40,17 +46,20 @@ export interface ReadinessFacts {
 }
 
 const has = (v: string | null | undefined) => !!v && v.trim() !== '';
+/** A PDF small enough for Najiz. */
+const fits = (mime: string | null, size: number | null | undefined) => mime === PDF && (size ?? 0) <= NAJIZ_MAX_BYTES;
 
 /**
  * The details Najiz still needs, in the order Najiz asks for them. The
  * establishment contract is optional on Najiz, so it is never "missing".
+ * A file counts only as a PDF of at most 0.95 MB, the most Najiz takes.
  */
 export function missingForNajiz(f: ReadinessFacts): NajizField[] {
   const out: NajizField[] = [];
   if (!has(f.owner_id_number)) out.push('owner_id');
   if (!has(f.unified_number)) out.push('unified_number');
   if (!has(f.iban) || !has(f.bank_name)) out.push('iban');
-  if (f.cr_mime !== PDF) out.push('cr_file');
+  if (!fits(f.cr_mime, f.cr_size)) out.push('cr_file');
   if (!has(f.debtor_first_name) || !has(f.debtor_family_name)) out.push('debtor_name');
   if (!PERSON_ID_TYPES.includes(f.debtor_id_type) || !has(f.debtor_id_number)) out.push('debtor_id');
   if (!has(f.debtor_nationality)) out.push('debtor_nationality');
@@ -59,7 +68,7 @@ export function missingForNajiz(f: ReadinessFacts): NajizField[] {
     out.push('note_type');
     return out;
   }
-  if (f.note_mime !== PDF) out.push('note_file');
+  if (!fits(f.note_mime, f.note_size)) out.push('note_file');
   if (!has(f.issue_city)) out.push('note_place');
   if (!has(f.issue_date)) out.push('note_date');
   if (!f.due_on_demand && !has(f.due_date)) out.push('note_due');

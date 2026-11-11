@@ -9,7 +9,6 @@
  *   POST  /api/legal/:id/approve      the client approves the filing (5.2)
  *   POST  /api/legal/:id/status       a status entered by hand, for example a request number (5.3)
  *   POST  /api/legal/:id/pack         make the filing pack PDF (5.1), saved as a legal_pack document
- *   POST  /api/najiz/runs             filing from Talos (5.4): not built yet, answers 501
  *
  * The database refuses a case past `ready` without approval, one open case per
  * debt and per note, and a request number before submitting (0001, 0008).
@@ -299,9 +298,4 @@ export function legalRoutes(app: FastifyInstance, { pool, storage, pdf }: LegalD
       throw err;
     }
   });
-
-  // Filing from Talos (5.4) is built next. Until then staff file on Najiz and add the request number by hand.
-  app.post('/api/najiz/runs', { preHandler: requireRole(REVIEWER_ROLES) }, async (_req, reply) =>
-    reply.code(501).send({ error: 'najiz_not_ready', message: 'Filing on Najiz from Talos comes next. For now, file on Najiz and add the request number to the case by hand.' }),
-  );
 }

@@ -82,8 +82,8 @@ async function newPage({ lang = 'en', theme = 'light', width = 1366, height = 90
   page.on('console', (m) => {
     if (m.type() !== 'error') return;
     const text = m.text();
-    // Refused requests the test causes on purpose (401 before login, 4xx on wrong input, 501 for filing from Talos, not built yet) are expected.
-    if (/status of (401|400|403|404|409|410|423|429|501|503)/.test(text)) return;
+    // Refused requests the test causes on purpose (401 before login, 4xx on wrong input) are expected.
+    if (/status of (401|400|403|404|409|410|423|429|503)/.test(text)) return;
     consoleErrors.push(`${page.url()}: ${text}`);
   });
   return page;
@@ -503,12 +503,18 @@ await step('legal: upload what Najiz needs, approve with the pledge, then add th
   assert.equal(approved.approval.contact_email, 'owner@demo.example');
   assert.equal(approved.approval.contact_phone, '+966500000100');
 
-  // Filing from Talos is not built yet: the dialog says so in plain words.
+  // Filing from Talos: the run starts on the real API and waits for the Najiz worker
+  // (not running here; the worker is tested against a fake Najiz in the API tests). Stop it.
   await page.getByRole('button', { name: en['legal.fileOne'] }).click();
   const dialog = page.getByRole('dialog');
   await dialog.getByRole('button', { name: en['najiz.start'] }).click();
-  await dialog.getByText(en['error.najiz_not_ready']).waitFor();
-  await dialog.getByRole('button', { name: en['common.cancel'] }).click();
+  await dialog.getByText(en['najiz.opening']).waitFor();
+  const filing = (await api('/api/legal')).body.items.find((x) => x.debt_id === DEBT.javed);
+  assert.equal(filing.stage, 'filing');
+  await dialog.getByRole('button', { name: en['najiz.stop'] }).click();
+  await dialog.getByText(en['najiz.stop.cancelled']).waitFor();
+  await dialog.getByRole('button', { name: en['common.close'], exact: true }).last().click();
+  assert.equal((await api(`/api/legal/${DEBT.javed}`)).body.row.stage, 'approved');
 
   // Filed on Najiz by hand: the request number is added to the case.
   await page.getByRole('button', { name: en['case.addStatus'] }).click();

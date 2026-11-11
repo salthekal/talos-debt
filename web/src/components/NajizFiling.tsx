@@ -1,6 +1,7 @@
 import { AlertTriangle, Check, CheckCircle2, Landmark, Loader2, Smartphone } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useCancelNajizRun, useNajizRun, useStartNajizRun } from '../api/hooks';
+import { ApiError } from '../api/source';
 import type { LegalRow, NajizCaseStep, NajizRun } from '../api/types';
 import { useI18n, type MessageKey } from '../i18n';
 import { sum } from '../lib/money';
@@ -34,7 +35,10 @@ export function NajizFilingDialog({ rows, onClose }: { rows: LegalRow[]; onClose
   const [runId, setRunId] = useState<string | null>(null);
   const run = useNajizRun(runId);
   const r = run.data;
-  const busy = r && ['starting', 'waiting_nafath', 'filing'].includes(r.stage);
+  const busy = r && ['starting', 'waiting_nafath', 'working'].includes(r.stage);
+  // A note from an earlier try may already be on Najiz: staff check Najiz, then confirm.
+  const checkFirst = start.error instanceof ApiError && start.error.code === 'najiz_check_first';
+  const [checked, setChecked] = useState(false);
 
   const title = !r
     ? t('najiz.title', { count: rows.length })
@@ -51,15 +55,20 @@ export function NajizFilingDialog({ rows, onClose }: { rows: LegalRow[]; onClose
       <button type="button" className="btn btn-quiet" onClick={onClose}>
         {t('common.cancel')}
       </button>
-      <button type="button" className="btn btn-primary" disabled={start.isPending} onClick={() => start.mutate(rows.map((x) => x.debt_id), { onSuccess: (x) => setRunId(x.id) })}>
+      <button
+        type="button"
+        className="btn btn-primary"
+        disabled={start.isPending || (checkFirst && !checked)}
+        onClick={() => start.mutate({ debtIds: rows.map((x) => x.debt_id), checkedNotOnNajiz: checkFirst && checked }, { onSuccess: (x) => setRunId(x.id) })}
+      >
         <Smartphone size={17} aria-hidden="true" />
         {t('najiz.start')}
       </button>
     </>
   ) : busy ? (
     <>
-      {r.stage === 'filing' && <p className="dialog-foot-note muted">{t('najiz.canClose')}</p>}
-      {r.stage === 'filing' ? (
+      {r.stage === 'working' && <p className="dialog-foot-note muted">{t('najiz.canClose')}</p>}
+      {r.stage === 'working' ? (
         <button type="button" className="btn btn-quiet" onClick={onClose}>
           {t('common.close')}
         </button>
@@ -83,9 +92,9 @@ export function NajizFilingDialog({ rows, onClose }: { rows: LegalRow[]; onClose
   );
 
   return (
-    <Dialog open onClose={busy && r?.stage !== 'filing' ? () => cancel.mutate(r!.id, { onSettled: onClose }) : onClose} title={title} footer={footer} wide>
+    <Dialog open onClose={busy && r?.stage !== 'working' ? () => cancel.mutate(r!.id, { onSettled: onClose }) : onClose} title={title} footer={footer} wide>
       {!r ? (
-        <Confirm rows={rows} error={start.error ? errorText(start.error, t) : null} />
+        <Confirm rows={rows} error={start.error ? errorText(start.error, t) : null} checkFirst={checkFirst} checked={checked} onChecked={setChecked} />
       ) : r.stage === 'starting' ? (
         <div className="najiz-wait">
           <Loader2 size={28} className="spin" aria-hidden="true" />
@@ -93,7 +102,7 @@ export function NajizFilingDialog({ rows, onClose }: { rows: LegalRow[]; onClose
         </div>
       ) : r.stage === 'waiting_nafath' ? (
         <Nafath run={r} />
-      ) : r.stage === 'filing' || r.stage === 'done' ? (
+      ) : r.stage === 'working' || r.stage === 'done' ? (
         <Progress run={r} />
       ) : r.stage === 'expired' ? (
         <div className="najiz-stop">
@@ -106,14 +115,16 @@ export function NajizFilingDialog({ rows, onClose }: { rows: LegalRow[]; onClose
             <AlertTriangle size={22} aria-hidden="true" />
             <p>{t(`najiz.stop.${r.stop_reason ?? 'unexpected_page'}` as MessageKey)}</p>
           </div>
-          {r.cases.some((c) => c.step === 'sent') && <Progress run={r} />}
+          {r.cases.some((c) => c.step === 'sent' || c.step === 'sending') && <Progress run={r} />}
         </>
       )}
     </Dialog>
   );
 }
 
-function Confirm({ rows, error }: { rows: LegalRow[]; error: string | null }) {
+function Confirm({ rows, error, checkFirst, checked, onChecked }: {
+  rows: LegalRow[]; error: string | null; checkFirst: boolean; checked: boolean; onChecked: (v: boolean) => void;
+}) {
   const { t } = useI18n();
   return (
     <div className="najiz-confirm">
@@ -141,6 +152,12 @@ function Confirm({ rows, error }: { rows: LegalRow[]; error: string | null }) {
         <li>{t('najiz.what3')}</li>
       </ol>
       <FormError message={error} />
+      {checkFirst && (
+        <label className="check najiz-checked">
+          <input type="checkbox" checked={checked} onChange={(e) => onChecked(e.target.checked)} />
+          <span>{t('najiz.checkedNotThere')}</span>
+        </label>
+      )}
     </div>
   );
 }
@@ -155,10 +172,14 @@ function Nafath({ run }: { run: NajizRun }) {
       <div className="nafath-num" aria-label={t('najiz.nafathNumber', { n: run.nafath_number ?? '' })}>
         <bdi dir="ltr">{run.nafath_number}</bdi>
       </div>
-      <p className="nafath-sent">
-        <Check size={16} aria-hidden="true" />
-        {t('najiz.nafathSent', { last4: run.owner_phone_last4 })}
-      </p>
+      {run.nafath_sent ? (
+        <p className="nafath-sent">
+          <Check size={16} aria-hidden="true" />
+          {t('najiz.nafathSent', { last4: run.owner_phone_last4 })}
+        </p>
+      ) : (
+        <p className="nafath-sent muted">{t('najiz.nafathTell')}</p>
+      )}
       {left !== null && (
         <p className="nafath-left muted" role="timer" aria-live="off">
           {t('najiz.nafathLeft', { time: mm })}
@@ -210,6 +231,11 @@ function Progress({ run }: { run: NajizRun }) {
                 <span className="muted">{t('najiz.queued')}</span>
               ) : c.step === 'stopped' ? (
                 <span className="tone-red">{t('najiz.notSent')}</span>
+              ) : c.step === 'sending' && !['starting', 'waiting_nafath', 'working'].includes(run.stage) ? (
+                <span className="tone-amber">
+                  <AlertTriangle size={15} aria-hidden="true" />
+                  {t('najiz.maybeSent')}
+                </span>
               ) : (
                 <>
                   <Loader2 size={15} className="spin" aria-hidden="true" />

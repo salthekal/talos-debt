@@ -74,6 +74,14 @@ const schema = z.object({
     .regex(/^([01]\d|2[0-3]):[0-5]\d$/, 'must be HH:MM')
     .default('08:00'),
 
+  // Najiz worker (Phase 5.4, `npm run najiz`).
+  NAJIZ_URL: z.url().default('https://najiz.sa'),
+  // How long the owner has to choose the number in the Nafath app.
+  NAJIZ_NAFATH_SECONDS: z.coerce.number().int().min(30).max(900).default(180),
+  // A run whose worker has not written for this long was stopped half way.
+  NAJIZ_STALE_MINUTES: z.coerce.number().int().min(2).max(120).default(5),
+  NAJIZ_POLL_SECONDS: z.coerce.number().int().min(1).max(300).default(3),
+
   // Uploaded files (step 3.3). 'local' is a folder on this machine: development
   // and tests only. Production uses a private Google Cloud Storage bucket in
   // the Dammam region (docs/file-storage.md).

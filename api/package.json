@@ -9,7 +9,9 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "whatsapp:ping": "tsx scripts/whatsapp-ping.ts",
     "scheduler": "tsx src/scheduler/main.ts",
-    "scheduler:start": "node dist/src/scheduler/main.js"
+    "scheduler:start": "node dist/src/scheduler/main.js",
+    "najiz": "tsx src/najiz/main.ts",
+    "najiz:start": "node dist/src/najiz/main.js"
   },
   "private": "true",
   "type": "module",
