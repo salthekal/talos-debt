@@ -8,6 +8,7 @@ import { documentRoutes } from './routes/documents.js';
 import { enforceabilityRoutes } from './routes/enforceability.js';
 import { importRoutes } from './routes/imports.js';
 import { legalRoutes } from './routes/legal.js';
+import { ChromiumPdfRenderer, type PdfRenderer } from './legal/pdf.js';
 import { UPLOAD_LIMITS } from './routes/upload.js';
 import { LocalDiskStorage, type FileStorage } from './storage/storage.js';
 import { messageRoutes } from './routes/messages.js';
@@ -36,6 +37,8 @@ export interface AppDeps {
   storage?: FileStorage;
   /** Sends login emails; defaults to the configured one. Tests pass a fake. */
   mailer?: Mailer;
+  /** Prints the filing pack; defaults to Chromium. */
+  pdf?: PdfRenderer;
   /** Login attempt limiter; tests pass a generous one. */
   loginLimiter?: RateLimiter;
 }
@@ -62,6 +65,8 @@ export function buildApp(config: Config, pool: pg.Pool, deps: AppDeps = {}): Fas
   }
   const storage = deps.storage ?? new LocalDiskStorage(config.STORAGE_LOCAL_DIR);
   const files = { pool, storage, config };
+  const pdf = deps.pdf ?? new ChromiumPdfRenderer();
+  app.addHook('onClose', async () => pdf.close());
 
   app.get('/health', async (_req, reply) => {
     try {
@@ -92,7 +97,7 @@ export function buildApp(config: Config, pool: pg.Pool, deps: AppDeps = {}): Fas
     importRoutes(api, files);
     documentRoutes(api, files);
     enforceabilityRoutes(api, { pool, config });
-    legalRoutes(api, pool);
+    legalRoutes(api, { pool, storage, pdf });
   });
 
   // Meta's webhook: no user login; requests are checked by signature instead.

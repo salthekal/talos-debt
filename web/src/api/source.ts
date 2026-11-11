@@ -88,6 +88,8 @@ export interface DataSource {
   uploadLegalFile(debtId: string, kind: NajizUploadKind, file: File): Promise<void>;
   /** A status entered by hand (5.3), for example from a Najiz text message. */
   addLegalStatus(debtId: string, input: LegalStatusInput): Promise<void>;
+  /** Make the filing pack PDF (5.1). Returns where to download it, or null for sample data. */
+  makePack(debtId: string): Promise<{ url: string | null; notAttached: number }>;
   /** The promissory note template, a Word file with no letterhead (5.0b). */
   noteTemplateUrl(): string;
 }

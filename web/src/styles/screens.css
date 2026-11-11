@@ -1770,3 +1770,18 @@ input[type='time'] {
 .nj-upload.is-busy {
   opacity: 0.6;
 }
+.case-pack .panel-title svg {
+  color: var(--magenta-600);
+}
+.case-pack-latest {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+  margin-block: var(--space-3);
+  font-size: var(--text-sm);
+}
+.case-pack .btn-block {
+  margin-block-start: var(--space-3);
+}

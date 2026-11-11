@@ -334,6 +334,7 @@ function legalDetail(debtId: string): LegalCaseDetail {
       promissory_note: pdf(`lf-n-${d.debt_id}`, `promissory-note-${d.ref_code}.pdf`, 240_000, 24 * 90, d.debtor_id),
     },
     approval: x.approval,
+    pack: null,
     events: x.events,
   };
 }
@@ -664,6 +665,10 @@ export const demoSource: DataSource = {
     if (input.najiz_request_number && x.najiz) x.najiz.number = input.najiz_request_number;
     x.events = [ev(`e-s-${x.events.length}`, input.status, 'staff', 0, { note: input.note ?? null }), ...x.events];
     return done();
+  },
+  makePack: async (debtId) => {
+    if (!legalSamples.has(debtId)) throw new ApiError(404, 'not_found', 'Debt not found');
+    return pause({ url: null, notAttached: 0 });
   },
   noteTemplateUrl: () => noteTemplate,
 };

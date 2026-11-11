@@ -29,7 +29,8 @@ bad = [
     {1: "Iqama", 2: "2400000044", 3: "Short Phone Demo", 5: "05123", 14: 100, 15: "Phone too short", 19: "None"},
 ]
 build("good.xlsx", good)
-# A small real PDF for the document upload.
+# A small real PDF (one blank page) for the document upload and the filing pack.
 with open(f"{out}/note.pdf", "wb") as f:
-    f.write(b"%PDF-1.4\n1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj\n2 0 obj<</Type/Pages/Count 0/Kids[]>>endobj\ntrailer<</Root 1 0 R>>\n%%EOF\n")
+    f.write(b"%PDF-1.4\n1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj\n2 0 obj<</Type/Pages/Count 1/Kids[3 0 R]>>endobj\n"
+            b"3 0 obj<</Type/Page/Parent 2 0 R/MediaBox[0 0 300 200]>>endobj\ntrailer<</Root 1 0 R>>\n%%EOF\n")
 build("bad.xlsx", bad)

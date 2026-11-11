@@ -59,9 +59,12 @@ jobs:
           node-version: 22
           cache: npm
           cache-dependency-path: api/package-lock.json
-      - name: Install psql
-        run: sudo apt-get update -q && sudo apt-get install -y -q postgresql-client
+      - name: Install psql and pdftotext
+        run: sudo apt-get update -q && sudo apt-get install -y -q postgresql-client poppler-utils
       - run: npm ci
+      # The filing pack (5.1) is printed by Chromium.
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
       - run: npm run typecheck
       - name: Run API tests
         env:

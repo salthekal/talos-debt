@@ -120,4 +120,5 @@ export const useStartNajizRun = () => useAction((s, debtIds: string[]) => s.star
 export const useCancelNajizRun = () => useAction((s, id: string) => s.cancelNajizRun(id), [...LEGAL_VIEWS, 'najizRun']);
 export const useUploadLegalFile = () =>
   useAction((s, a: { debtId: string; kind: NajizUploadKind; file: File }) => s.uploadLegalFile(a.debtId, a.kind, a.file), [...LEGAL_VIEWS, 'documents']);
+export const useMakePack = () => useAction((s, debtId: string) => s.makePack(debtId), ['legalCase', 'documents']);
 export const useAddLegalStatus = () => useAction((s, a: { debtId: string; input: LegalStatusInput }) => s.addLegalStatus(a.debtId, a.input), LEGAL_VIEWS);

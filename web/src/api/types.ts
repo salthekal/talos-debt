@@ -370,6 +370,8 @@ export interface LegalCaseDetail {
   amounts: { claimed: Money; received: Money };
   files: Record<NajizFileKind, DocumentInfo | null>;
   approval: { approved_by_name: string; approved_at: string; contact_email: string; contact_phone: string } | null;
+  /** The latest filing pack (5.1), if one was made. */
+  pack: DocumentInfo | null;
   events: LegalEvent[];
 }
 
