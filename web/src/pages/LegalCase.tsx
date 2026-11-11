@@ -8,6 +8,7 @@ import { useCanEdit } from '../components/actions';
 import { ErrorState, Initials, Loading, Money } from '../components/bits';
 import { NajizFilingDialog } from '../components/NajizFiling';
 import { Dialog, Field, FormError, errorText, useToast } from '../components/ui';
+import { najizMeaning } from '../lib/najiz';
 import { useI18n, type MessageKey } from '../i18n';
 import { isZero } from '../lib/money';
 import { NotFound } from './NotFound';
@@ -184,7 +185,13 @@ export function LegalCasePage() {
               </h2>
               <dl className="mini-facts">
                 <div><dt>{t('legal.col.request')}</dt><dd className="code"><bdi dir="ltr">{row.najiz_request_number}</bdi></dd></div>
-                <div><dt>{t('legal.col.najizStatus')}</dt><dd lang="ar" dir="rtl">{row.najiz_status}</dd></div>
+                <div>
+                  <dt>{t('legal.col.najizStatus')}</dt>
+                  <dd>
+                    <span lang="ar" dir="rtl">{row.najiz_status}</span>
+                    {najizMeaning(row.najiz_status) && <span className="muted najiz-meaning">{t(najizMeaning(row.najiz_status)!)}</span>}
+                  </dd>
+                </div>
                 {row.najiz_circuit && <div><dt>{t('case.circuit')}</dt><dd lang="ar" dir="rtl">{row.najiz_circuit}</dd></div>}
                 <div><dt>{t('case.court')}</dt><dd lang="ar" dir="rtl">محكمة التنفيذ</dd></div>
               </dl>

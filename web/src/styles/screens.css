@@ -1785,3 +1785,14 @@ input[type='time'] {
 .case-pack .btn-block {
   margin-block-start: var(--space-3);
 }
+
+/* status checks on Najiz (5.5) */
+.najiz-meaning,
+.check-meaning {
+  display: block;
+  font-size: var(--text-xs);
+  line-height: 1.4;
+}
+.check-list .run-state {
+  flex-wrap: wrap;
+}

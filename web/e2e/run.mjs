@@ -537,6 +537,17 @@ await step('legal: upload what Najiz needs, approve with the pledge, then add th
   const packRes = await fetch(`${API}/api/documents/${pack.id}/download`, { headers: { cookie: await sessionCookie(OWNER) } });
   assert.equal(packRes.status, 200);
   assert.equal(Buffer.from(await packRes.arrayBuffer()).subarray(0, 5).toString(), '%PDF-');
+
+  // 5.5: check the status on Najiz. The run starts on the real API (no Najiz worker here); stop it.
+  await page.goto(`${APP}/legal/filed`);
+  await page.getByRole('button', { name: en['check.button'] }).click();
+  const check = page.getByRole('dialog');
+  await check.getByText('401014800099999').waitFor();
+  await check.getByRole('button', { name: en['najiz.start'] }).click();
+  await check.getByText(en['najiz.opening']).waitFor();
+  await check.getByRole('button', { name: en['najiz.stop'] }).click();
+  await check.getByText(en['check.stop.cancelled']).waitFor();
+  await check.getByRole('button', { name: en['common.close'], exact: true }).last().click();
   await page.context().close();
 
   // The Arabic "On Najiz" tab lists it with its number.

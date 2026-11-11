@@ -84,6 +84,8 @@ export interface DataSource {
   startNajizRun(debtIds: string[], opts?: { checkedNotOnNajiz?: boolean }): Promise<NajizRun>;
   najizRun(id: string): Promise<NajizRun>;
   cancelNajizRun(id: string): Promise<void>;
+  /** One Najiz sign-in that reads the status of every filed request (or only these debts). */
+  startNajizCheck(debtIds?: string[]): Promise<NajizRun>;
   /** Upload a PDF Najiz needs: the company's papers, or the copy of this debt's note. */
   uploadLegalFile(debtId: string, kind: NajizUploadKind, file: File): Promise<void>;
   /** A status entered by hand (5.3), for example from a Najiz text message. */

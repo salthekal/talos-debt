@@ -326,3 +326,65 @@ describe('a note that may already be on Najiz is never filed twice by accident',
     expect((await start([PAPER])).json().error).toBe('najiz_check_first');
   });
 });
+
+describe('status checks (5.5): one Nafath approval reads every request', () => {
+  const check = (payload: Record<string, unknown> = {}, headers = staff) => send('POST', '/api/najiz/checks', payload, headers);
+
+  it('viewers cannot start one; a client with nothing on Najiz is told so', async () => {
+    expect((await check({}, viewer)).statusCode).toBe(403);
+    const none = await check({}, other);
+    expect(none.statusCode).toBe(409);
+    expect(none.json().error).toBe('nothing_to_check');
+  });
+
+  it('reads the status and circuit of each request, and tells the client what changed', async () => {
+    const res = await check();
+    expect(res.statusCode).toBe(201);
+    const run = res.json().run;
+    expect(run.kind).toBe('status_check');
+    const numbers = fake.requests.map((x) => x.number);
+    expect(run.cases.map((c: { request_number: string }) => c.request_number)).toEqual(numbers);
+    // Najiz shows a new status for the first request.
+    fake.statuses.set(numbers[0]!, { status: 'قيد المعالجة', circuit: 'دائرة التنفيذ الأولى' });
+    await runWithNafath(run.id);
+
+    const after = (await send('GET', `/api/najiz/runs/${run.id}`)).json().run;
+    expect(after.stage).toBe('done');
+    expect(after.cases.map((c: { step: string; najiz_status: string }) => [c.step, c.najiz_status])).toEqual([
+      ['checked', 'قيد المعالجة'], ['checked', 'قيد التنفيذ'],
+    ]);
+    const imran = (await send('GET', `/api/legal/${IMRAN_DEBT}`)).json();
+    expect(imran.row).toMatchObject({ stage: 'submitted', najiz_status: 'قيد المعالجة', najiz_circuit: 'دائرة التنفيذ الأولى' });
+    expect(imran.row.najiz_status_checked_at).not.toBeNull();
+    expect(imran.events[0]).toMatchObject({ status: 'submitted', najiz_status: 'قيد المعالجة', source: 'najiz_check' });
+    const notes = await t.admin.query(`SELECT data FROM app.notifications WHERE data->>'event' = 'najiz_status' ORDER BY created_at`);
+    expect(notes.rows.map((x) => x.data.status)).toEqual(['قيد المعالجة', 'قيد التنفيذ']);
+  }, 60_000);
+
+  it('a second round adds history only for what changed', async () => {
+    const numbers = fake.requests.map((x) => x.number);
+    fake.statuses.set(numbers[1]!, { status: 'منتهي', circuit: 'دائرة التنفيذ الثالثة' });
+    const run = (await check({ debt_ids: [IMRAN_DEBT, RAHIM_DEBT] })).json().run;
+    await runWithNafath(run.id);
+    expect(await stageOf(run.id)).toBe('done');
+    const events = await t.admin.query(
+      `SELECT l.debt_id, count(*)::int AS n FROM app.legal_case_events e JOIN app.legal_cases l ON l.id = e.legal_case_id
+        WHERE e.source = 'najiz_check' GROUP BY l.debt_id`,
+    );
+    const byDebt = Object.fromEntries(events.rows.map((x) => [x.debt_id, x.n]));
+    expect(byDebt).toEqual({ [IMRAN_DEBT]: 1, [RAHIM_DEBT]: 2 });
+    // Any status Najiz shows is kept as Najiz writes it.
+    expect((await send('GET', `/api/legal/${RAHIM_DEBT}`)).json().row.najiz_status).toBe('منتهي');
+  }, 60_000);
+
+  it('a request Najiz cannot find stops the round and tells staff', async () => {
+    await t.admin.query(`UPDATE app.legal_cases SET najiz_request_number = '9999999999' WHERE debt_id = $1`, [RAHIM_DEBT]);
+    const run = (await check({ debt_ids: [RAHIM_DEBT] })).json().run;
+    await runWithNafath(run.id);
+    expect((await t.admin.query(`SELECT stage, stop_reason FROM app.najiz_runs WHERE id = $1`, [run.id])).rows[0]).toEqual({
+      stage: 'stopped', stop_reason: 'unexpected_page',
+    });
+    const note = await t.admin.query(`SELECT data FROM app.notifications WHERE target_id = $1`, [run.id]);
+    expect(note.rows[0].data).toMatchObject({ event: 'najiz_stopped', kind: 'status_check' });
+  }, 30_000);
+});

@@ -349,6 +349,21 @@ function runNow(entry: { run: NajizRun; startedMs: number }): NajizRun {
   if (t < 9000) return { ...run, stage: 'waiting_nafath', nafath_number: '47', nafath_expires_at: new Date(entry.startedMs + 61_500).toISOString() };
   const stepMs = 1100;
   const elapsed = Math.floor((t - 9000) / stepMs);
+  if (run.kind === 'status_check') {
+    const cases = run.cases.map((c, i) =>
+      i < elapsed ? { ...c, step: 'checked' as const, najiz_status: i % 2 ? 'قيد المعالجة' : 'قيد التنفيذ' } : c,
+    );
+    const finished = cases.every((c) => c.step === 'checked');
+    const next: NajizRun = { ...run, stage: finished ? 'done' : 'working', nafath_number: null, cases };
+    if (finished) {
+      entry.run = next;
+      for (const c of cases) {
+        const x = legalSamples.get(c.debt_id)!;
+        if (x.najiz) x.najiz = { ...x.najiz, status: c.najiz_status!, checked: new Date().toISOString() };
+      }
+    }
+    return next;
+  }
   const cases = run.cases.map((c, i) => {
     const k = elapsed - i * RUN_STEPS.length;
     const step: NajizCaseStep = k < 0 ? 'waiting' : RUN_STEPS[Math.min(k, RUN_STEPS.length - 1)]!;
@@ -627,7 +642,7 @@ export const demoSource: DataSource = {
     }
     for (const d of picked) legalSamples.get(d.debt_id)!.stage = 'filing';
     const run: NajizRun = {
-      id: `run-${legalRuns.length + 1}`, stage: 'starting', nafath_number: null, nafath_expires_at: null, nafath_sent: false, owner_phone_last4: OWNER.phone.slice(-4),
+      id: `run-${legalRuns.length + 1}`, kind: 'file', stage: 'starting', nafath_number: null, nafath_expires_at: null, nafath_sent: false, owner_phone_last4: OWNER.phone.slice(-4),
       started_at: new Date().toISOString(), stop_reason: null,
       cases: picked.map((d) => ({ debt_id: d.debt_id, full_name: d.full_name, ref_code: d.ref_code, amount: d.amount_outstanding, step: 'waiting', request_number: null })),
     };
@@ -638,6 +653,23 @@ export const demoSource: DataSource = {
     const entry = legalRuns.find((r) => r.run.id === id);
     if (!entry) throw new ApiError(404, 'not_found', 'Sign-in not found');
     return pause(runNow(entry));
+  },
+  startNajizCheck: async () => {
+    const onNajiz = legalDebts.filter((d) => {
+      const x = legalSamples.get(d.debt_id)!;
+      return ['submitted', 'order_issued', 'measures_applied'].includes(x.stage) && x.najiz;
+    });
+    if (!onNajiz.length) throw new ApiError(409, 'nothing_to_check', 'There is no request on Najiz to check');
+    const run: NajizRun = {
+      id: `run-${legalRuns.length + 1}`, kind: 'status_check', stage: 'starting', nafath_number: null, nafath_expires_at: null, nafath_sent: false,
+      owner_phone_last4: OWNER.phone.slice(-4), started_at: new Date().toISOString(), stop_reason: null,
+      cases: onNajiz.map((d) => ({
+        debt_id: d.debt_id, full_name: d.full_name, ref_code: d.ref_code, amount: d.amount_outstanding, step: 'waiting',
+        request_number: legalSamples.get(d.debt_id)!.najiz!.number, najiz_status: null,
+      })),
+    };
+    legalRuns = [...legalRuns, { run, startedMs: Date.now() }];
+    return pause(run);
   },
   cancelNajizRun: async (id) => {
     const entry = legalRuns.find((r) => r.run.id === id);
