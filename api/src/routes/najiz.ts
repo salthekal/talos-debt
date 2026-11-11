@@ -5,6 +5,7 @@
  *   POST /api/najiz/runs             start one Najiz sign-in that files the chosen approved debts
  *   GET  /api/najiz/runs/:id         where the run stands (polled by the dashboard)
  *   POST /api/najiz/runs/:id/cancel  stop it; nothing more is sent
+ *   POST /api/najiz/checks           start one Najiz sign-in that reads the status of every filed request (5.5)
  *
  * Only notes approved by the client (5.2) can be filed, with nothing missing,
  * one sign-in at a time per client (najiz_runs_one_active, migration 0009).
@@ -27,7 +28,58 @@ const startBody = z.object({
   checked_not_on_najiz: z.boolean().optional(),
 });
 
+const checkBody = z.object({
+  /** Only these debts; all filed requests when left out. */
+  debt_ids: z.array(z.uuid()).min(1).max(200).optional(),
+});
+
+/** Statuses of a case that is on Najiz and still open there. */
+export const ON_NAJIZ = ['submitted', 'order_issued', 'measures_applied'];
+
+const busy = (err: { code?: string; constraint?: string }) => {
+  if (err.code === '23505' && err.constraint === 'najiz_runs_one_active') {
+    return { code: 409 as const, error: 'najiz_busy', message: 'A Najiz sign-in for your company is already running. Wait for it to finish.' };
+  }
+  throw err;
+};
+
 export function najizRoutes(app: FastifyInstance, pool: pg.Pool) {
+  // 5.5: one sign-in, one Nafath approval, every open request read in turn.
+  app.post('/api/najiz/checks', { preHandler: requireRole(REVIEWER_ROLES) }, async (req, reply) => {
+    const body = parseOr400(checkBody, req.body ?? {}, reply);
+    if (!body) return;
+    const user = req.user!;
+    const result = await withTenant(pool, tenantOf(user), async (db) => {
+      const cases = await db.query<{ id: string; najiz_request_number: string }>(
+        `SELECT l.id, l.najiz_request_number FROM app.legal_cases l
+          WHERE l.status = ANY($1) AND l.najiz_request_number IS NOT NULL
+            AND ($2::uuid[] IS NULL OR l.debt_id = ANY($2))
+          ORDER BY l.submitted_at NULLS LAST, l.id`,
+        [ON_NAJIZ, body.debt_ids ?? null],
+      );
+      if (!cases.rowCount) {
+        return { code: 409 as const, error: 'nothing_to_check', message: 'There is no request on Najiz to check' };
+      }
+      const run = (await db.query(
+        `INSERT INTO app.najiz_runs (client_id, kind, requested_by) VALUES (app.current_client_id(), 'status_check', $1) RETURNING id`,
+        [user.userId],
+      )).rows[0];
+      for (const [position, c] of cases.rows.entries()) {
+        await db.query(
+          `INSERT INTO app.najiz_run_items (client_id, run_id, legal_case_id, position, request_number)
+           VALUES (app.current_client_id(), $1, $2, $3, $4)`,
+          [run.id, c.id, position, c.najiz_request_number],
+        );
+      }
+      return { code: 201 as const, run: await loadRunView(db, run.id) };
+    }).catch(busy);
+    if (result.code === 409) {
+      const { code: _c, ...rest } = result;
+      return reply.code(409).send(rest);
+    }
+    return reply.code(201).send({ run: result.run });
+  });
+
   app.post('/api/najiz/runs', { preHandler: requireRole(REVIEWER_ROLES) }, async (req, reply) => {
     const body = parseOr400(startBody, req.body ?? {}, reply);
     if (!body) return;
@@ -77,12 +129,7 @@ export function najizRoutes(app: FastifyInstance, pool: pg.Pool) {
         );
       }
       return { code: 201 as const, run: await loadRunView(db, run.id) };
-    }).catch((err: { code?: string; constraint?: string }) => {
-      if (err.code === '23505' && err.constraint === 'najiz_runs_one_active') {
-        return { code: 409 as const, error: 'najiz_busy', message: 'A Najiz sign-in for your company is already running. Wait for it to finish.' };
-      }
-      throw err;
-    });
+    }).catch(busy);
     if (result.code === 404) return reply.code(404).send({ error: 'not_found', message: 'Debt not found' });
     if (result.code === 409) {
       const { code: _c, ...rest } = result;

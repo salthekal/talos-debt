@@ -609,7 +609,7 @@ describe('legal and Najiz filing', () => {
   it('filing signs in with Nafath: the number is shown, and the owner is asked to choose it', async () => {
     const started: string[][] = [];
     const run = {
-      id: 'run-t', stage: 'waiting_nafath' as const, nafath_number: '47', nafath_expires_at: new Date(Date.now() + 60_000).toISOString(),
+      id: 'run-t', kind: 'file' as const, stage: 'waiting_nafath' as const, nafath_number: '47', nafath_expires_at: new Date(Date.now() + 60_000).toISOString(),
       nafath_sent: false, owner_phone_last4: '0100', started_at: new Date().toISOString(), stop_reason: null,
       cases: [{ debt_id: 'x', full_name: 'Nasir Mahmood', ref_code: 'DBT-2026-0019', amount: '2250.00', step: 'waiting' as const, request_number: null }],
     };
@@ -629,7 +629,7 @@ describe('legal and Najiz filing', () => {
 
   it('a filing that stopped says why, in Arabic', async () => {
     const run = {
-      id: 'run-s', stage: 'stopped' as const, nafath_number: null, nafath_expires_at: null, nafath_sent: false, owner_phone_last4: '0100',
+      id: 'run-s', kind: 'file' as const, stage: 'stopped' as const, nafath_number: null, nafath_expires_at: null, nafath_sent: false, owner_phone_last4: '0100',
       started_at: new Date().toISOString(), stop_reason: 'captcha' as const,
       cases: [{ debt_id: 'x', full_name: 'Nasir Mahmood', ref_code: 'DBT-2026-0019', amount: '2250.00', step: 'stopped' as const, request_number: null }],
     };
@@ -710,9 +710,48 @@ describe('legal and Najiz filing', () => {
     expect(calls.map((c) => c.checked)).toEqual([false, true]);
   });
 
+  it('status check: one Nafath approval, then each request with what its status means, in Arabic', async () => {
+    let calls = 0;
+    const filed = (await demoSource.legal()).filter((r) => ['submitted', 'order_issued', 'measures_applied'].includes(r.stage) && r.najiz_request_number);
+    expect(filed.length).toBeGreaterThan(0);
+    const base = {
+      id: 'run-c', kind: 'status_check' as const, nafath_expires_at: null, nafath_sent: false, owner_phone_last4: '0100',
+      started_at: new Date().toISOString(), stop_reason: null,
+    };
+    const cases = filed.map((r) => ({ debt_id: r.debt_id, full_name: r.full_name, ref_code: r.ref_code, amount: r.amount_outstanding, request_number: r.najiz_request_number }));
+    const user = userEvent.setup();
+    renderAt('/legal/filed', {
+      ...demoSource,
+      startNajizCheck: async () => {
+        calls++;
+        return { ...base, stage: 'waiting_nafath', nafath_number: '12', cases: cases.map((c) => ({ ...c, step: 'waiting' as const })) };
+      },
+      najizRun: async () => ({
+        ...base, stage: 'done', nafath_number: null,
+        cases: cases.map((c, i) => ({ ...c, step: 'checked' as const, najiz_status: i === 0 ? 'قيد المعالجة' : 'منتهي' })),
+      }),
+    }, 'ar');
+    await user.click(await screen.findByRole('button', { name: ar('check.button') }));
+    const dialog = await screen.findByRole('dialog');
+    expect(within(dialog).getByText(ar('check.lead'))).toBeInTheDocument();
+    await user.click(within(dialog).getByRole('button', { name: ar('najiz.start') }));
+    expect(await within(dialog).findByText(ar('check.doneTitle'))).toBeInTheDocument();
+    expect(within(dialog).getByText('قيد المعالجة')).toBeInTheDocument();
+    expect(within(dialog).getByText(ar('najizStatus.processing'))).toBeInTheDocument();
+    // A status Talos does not know is shown as Najiz writes it, with no guessed meaning.
+    if (cases.length > 1) expect(within(dialog).getAllByText('منتهي').length).toBeGreaterThan(0);
+    expect(calls).toBe(1);
+  });
+
+  it('viewers do not see the status check button', async () => {
+    renderAt('/legal/filed', withRole('viewer'));
+    await screen.findByRole('tab', { name: new RegExp(en('legal.tab.filed')) });
+    expect(screen.queryByRole('button', { name: en('check.button') })).not.toBeInTheDocument();
+  });
+
   it('a stopped filing marks a note that may be on Najiz', async () => {
     const run = {
-      id: 'run-m', stage: 'stopped' as const, nafath_number: null, nafath_expires_at: null, nafath_sent: false, owner_phone_last4: '0100',
+      id: 'run-m', kind: 'file' as const, stage: 'stopped' as const, nafath_number: null, nafath_expires_at: null, nafath_sent: false, owner_phone_last4: '0100',
       started_at: new Date().toISOString(), stop_reason: 'worker_lost' as const,
       cases: [{ debt_id: 'x', full_name: 'Nasir Mahmood', ref_code: 'DBT-2026-0019', amount: '2250.00', step: 'sending' as const, request_number: null }],
     };

@@ -1,13 +1,17 @@
-import { CheckCircle2, ChevronRight, Download, FileText, Gavel, Landmark } from 'lucide-react';
+import { CheckCircle2, ChevronRight, Download, FileText, Gavel, Landmark, RefreshCw } from 'lucide-react';
 import { useMemo, useState, type KeyboardEvent } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { useLegal, useSource } from '../api/hooks';
 import type { LegalRow, LegalStage } from '../api/types';
 import { useCanEdit } from '../components/actions';
 import { Empty, ErrorState, Initials, Loading, Money } from '../components/bits';
-import { NajizFilingDialog } from '../components/NajizFiling';
+import { NajizCheckDialog, NajizFilingDialog } from '../components/NajizFiling';
 import { useI18n, type MessageKey } from '../i18n';
 import { sum } from '../lib/money';
+import { najizMeaning } from '../lib/najiz';
+
+/** Stages of a case whose request is on Najiz and still open there. */
+const ON_NAJIZ: LegalStage[] = ['submitted', 'order_issued', 'measures_applied'];
 
 const TABS = ['file', 'filed'] as const;
 type Tab = (typeof TABS)[number];
@@ -56,6 +60,9 @@ export function LegalPage() {
   const [picked, setPicked] = useState<Set<string> | null>(null);
   const chosen = picked ?? new Set(approved.map((r) => r.debt_id));
   const [filing, setFiling] = useState<LegalRow[] | null>(null);
+  const [checking, setChecking] = useState(false);
+  // Requests on Najiz that are still open there (5.5).
+  const toCheck = filed.filter((r) => ON_NAJIZ.includes(r.stage) && r.najiz_request_number);
 
   const onKey = (e: KeyboardEvent) => {
     const step = e.key === 'ArrowRight' ? 1 : e.key === 'ArrowLeft' ? -1 : 0;
@@ -76,6 +83,14 @@ export function LegalPage() {
           <h1 className="page-title">{t('legal.title')}</h1>
           <p className="page-sub">{t('legal.lead')}</p>
         </div>
+        {canEdit && tab === 'filed' && toCheck.length > 0 && (
+          <div className="page-actions">
+            <button type="button" className="btn btn-primary" onClick={() => setChecking(true)}>
+              <RefreshCw size={17} aria-hidden="true" />
+              {t('check.button')}
+            </button>
+          </div>
+        )}
         {canEdit && tab === 'file' && approved.length > 0 && (
           <div className="page-actions">
             <button type="button" className="btn btn-primary" disabled={toFileNow.length === 0} onClick={() => setFiling(toFileNow)}>
@@ -162,6 +177,7 @@ export function LegalPage() {
 
       {tab === 'filed' && filed.length > 0 && <p className="legal-foot muted">{t('legal.checksHint')}</p>}
 
+      {checking && <NajizCheckDialog rows={toCheck} onClose={() => setChecking(false)} />}
       {filing && <NajizFilingDialog rows={filing} onClose={() => (setFiling(null), setPicked(null))} />}
     </div>
   );
@@ -284,6 +300,7 @@ function FiledTable({ rows }: { rows: LegalRow[] }) {
                     <CheckCircle2 size={15} aria-hidden="true" />
                     <span lang="ar" dir="rtl">{r.najiz_status}</span>
                   </span>
+                  {najizMeaning(r.najiz_status) && <span className="muted najiz-meaning">{t(najizMeaning(r.najiz_status)!)}</span>}
                   {r.najiz_circuit && (
                     <span className="muted najiz-circuit" lang="ar" dir="rtl">
                       {r.najiz_circuit}

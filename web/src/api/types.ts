@@ -166,13 +166,15 @@ export interface NotificationData {
   event?:
     | 'receipt' | 'dispute' | 'needs_reply' | 'reply_held' | 'legal_ready' | 'replied_after_last'
     | 'promise_broken' | 'promise_partly' | 'not_sent' | 'send_failed' | 'maybe_not_sent' | 'summary'
-    | 'najiz_filed' | 'najiz_stopped';
+    | 'najiz_filed' | 'najiz_stopped' | 'najiz_status';
   name?: string;
   ref?: string | null;
   amount?: string;
   reminders?: number;
-  /** Najiz request number (najiz_filed). */
+  /** Najiz request number (najiz_filed, najiz_status). */
   number?: string;
+  /** The status read from Najiz, as Najiz writes it (najiz_status). */
+  status?: string;
   date?: string;
   debtor_id?: string;
   summary?: Partial<Record<'reminders_sent' | 'replies' | 'promises' | 'payments_to_review' | 'disputes' | 'legal_ready' | 'waiting_approval', number>>;
@@ -393,11 +395,12 @@ export interface ApproveFilingInput {
 }
 
 export type NajizRunStage = 'starting' | 'waiting_nafath' | 'working' | 'done' | 'stopped' | 'expired';
-export type NajizCaseStep = 'waiting' | 'request_type' | 'requester' | 'debtor' | 'content' | 'sending' | 'sent' | 'stopped';
+export type NajizCaseStep = 'waiting' | 'request_type' | 'requester' | 'debtor' | 'content' | 'sending' | 'sent' | 'checked' | 'stopped';
 
-/** One sign-in to Najiz that files one or more approved notes. */
+/** One sign-in to Najiz that files approved notes (5.4) or reads the status of filed requests (5.5). */
 export interface NajizRun {
   id: string;
+  kind: 'file' | 'status_check';
   stage: NajizRunStage;
   /** The two-digit number the owner chooses in the Nafath app. */
   nafath_number: string | null;
@@ -414,6 +417,9 @@ export interface NajizRun {
     /** 'sending' on a finished run: "send" may have been pressed, so the note may be on Najiz. */
     step: NajizCaseStep;
     request_number: string | null;
+    /** Status checks: the status read from Najiz, as Najiz writes it. */
+    najiz_status?: string | null;
+    circuit?: string | null;
   }[];
   /** Why the robot stopped, in plain words, when stage is 'stopped'. */
   stop_reason: 'unexpected_page' | 'captcha' | 'najiz_error' | 'details_differ' | 'company_not_found' | 'cancelled' | 'worker_lost' | null;

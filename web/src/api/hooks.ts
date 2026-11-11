@@ -118,6 +118,7 @@ export const useSaveNajizDetails = () => useAction((s, a: { debtId: string; inpu
 export const useApproveFiling = () => useAction((s, a: { debtId: string; input: ApproveFilingInput }) => s.approveFiling(a.debtId, a.input), LEGAL_VIEWS);
 export const useStartNajizRun = () =>
   useAction((s, a: { debtIds: string[]; checkedNotOnNajiz?: boolean }) => s.startNajizRun(a.debtIds, { checkedNotOnNajiz: a.checkedNotOnNajiz }), LEGAL_VIEWS);
+export const useStartNajizCheck = () => useAction((s, _: void) => s.startNajizCheck(), LEGAL_VIEWS);
 export const useCancelNajizRun = () => useAction((s, id: string) => s.cancelNajizRun(id), [...LEGAL_VIEWS, 'najizRun']);
 export const useUploadLegalFile = () =>
   useAction((s, a: { debtId: string; kind: NajizUploadKind; file: File }) => s.uploadLegalFile(a.debtId, a.kind, a.file), [...LEGAL_VIEWS, 'documents']);

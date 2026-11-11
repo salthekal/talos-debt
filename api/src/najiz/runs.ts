@@ -33,7 +33,7 @@ export async function loadRunView(db: Db, runId: string) {
   if (!run) return undefined;
   const items = await db.query(
     `SELECT l.debt_id, dr.full_name, d.ref_code, l.amount_claimed AS amount, ri.step, ri.request_number,
-            ri.najiz_status, ri.error
+            ri.najiz_status, l.najiz_circuit AS circuit, ri.error
        FROM app.najiz_run_items ri
        JOIN app.legal_cases l ON l.id = ri.legal_case_id
        JOIN app.debts d ON d.id = l.debt_id

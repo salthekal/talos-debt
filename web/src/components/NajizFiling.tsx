@@ -1,10 +1,11 @@
 import { AlertTriangle, Check, CheckCircle2, Landmark, Loader2, Smartphone } from 'lucide-react';
 import { useEffect, useState } from 'react';
-import { useCancelNajizRun, useNajizRun, useStartNajizRun } from '../api/hooks';
+import { useCancelNajizRun, useNajizRun, useStartNajizCheck, useStartNajizRun } from '../api/hooks';
 import { ApiError } from '../api/source';
 import type { LegalRow, NajizCaseStep, NajizRun } from '../api/types';
 import { useI18n, type MessageKey } from '../i18n';
 import { sum } from '../lib/money';
+import { najizMeaning } from '../lib/najiz';
 import { Money } from './bits';
 import { Dialog, FormError, errorText } from './ui';
 
@@ -252,6 +253,160 @@ function Progress({ run }: { run: NajizRun }) {
           {t('najiz.doneHint')}
         </li>
       )}
+    </ul>
+  );
+}
+
+/**
+ * One Najiz sign-in that reads the status of every filed request (5.5):
+ * the owner approves once in Nafath, then Talos opens each request in turn.
+ */
+export function NajizCheckDialog({ rows, onClose }: { rows: LegalRow[]; onClose: () => void }) {
+  const { t } = useI18n();
+  const start = useStartNajizCheck();
+  const cancel = useCancelNajizRun();
+  const [runId, setRunId] = useState<string | null>(null);
+  const run = useNajizRun(runId);
+  const r = run.data;
+  const busy = r && ['starting', 'waiting_nafath', 'working'].includes(r.stage);
+
+  const title = !r
+    ? t('check.title', { count: rows.length })
+    : r.stage === 'done'
+      ? t('check.doneTitle')
+      : r.stage === 'stopped'
+        ? t('check.stoppedTitle')
+        : r.stage === 'expired'
+          ? t('najiz.expiredTitle')
+          : t('check.title', { count: r.cases.length });
+
+  const footer = !r ? (
+    <>
+      <button type="button" className="btn btn-quiet" onClick={onClose}>
+        {t('common.cancel')}
+      </button>
+      <button type="button" className="btn btn-primary" disabled={start.isPending} onClick={() => start.mutate(undefined, { onSuccess: (x) => setRunId(x.id) })}>
+        <Smartphone size={17} aria-hidden="true" />
+        {t('najiz.start')}
+      </button>
+    </>
+  ) : busy ? (
+    <>
+      {r.stage === 'working' && <p className="dialog-foot-note muted">{t('check.canClose')}</p>}
+      {r.stage === 'working' ? (
+        <button type="button" className="btn btn-quiet" onClick={onClose}>
+          {t('common.close')}
+        </button>
+      ) : (
+        <button type="button" className="btn btn-quiet" disabled={cancel.isPending} onClick={() => cancel.mutate(r.id)}>
+          {t('najiz.stop')}
+        </button>
+      )}
+    </>
+  ) : (
+    <>
+      {r.stage === 'expired' && (
+        <button type="button" className="btn btn-quiet" onClick={() => (setRunId(null), start.reset())}>
+          {t('najiz.tryAgain')}
+        </button>
+      )}
+      <button type="button" className="btn btn-primary" onClick={onClose}>
+        {t('common.close')}
+      </button>
+    </>
+  );
+
+  return (
+    <Dialog open onClose={busy && r?.stage !== 'working' ? () => cancel.mutate(r!.id, { onSettled: onClose }) : onClose} title={title} footer={footer} wide>
+      {!r ? (
+        <div className="najiz-confirm">
+          <p className="dialog-lead">{t('check.lead')}</p>
+          <ul className="najiz-list">
+            {rows.map((x) => (
+              <li key={x.debt_id}>
+                <span>
+                  <strong>{x.full_name}</strong>
+                  <span className="ref">{x.ref_code}</span>
+                </span>
+                <span className="code">
+                  <bdi dir="ltr">{x.najiz_request_number}</bdi>
+                </span>
+              </li>
+            ))}
+          </ul>
+          <ol className="najiz-what">
+            <li>{t('najiz.what1')}</li>
+            <li>{t('najiz.what2')}</li>
+            <li>{t('check.what3')}</li>
+          </ol>
+          <FormError message={start.error ? errorText(start.error, t) : null} />
+        </div>
+      ) : r.stage === 'starting' ? (
+        <div className="najiz-wait">
+          <Loader2 size={28} className="spin" aria-hidden="true" />
+          <p role="status">{t('najiz.opening')}</p>
+        </div>
+      ) : r.stage === 'waiting_nafath' ? (
+        <Nafath run={r} />
+      ) : r.stage === 'working' || r.stage === 'done' ? (
+        <CheckProgress run={r} />
+      ) : r.stage === 'expired' ? (
+        <div className="najiz-stop">
+          <AlertTriangle size={22} aria-hidden="true" />
+          <p>{t('najiz.expired')}</p>
+        </div>
+      ) : (
+        <>
+          <div className="najiz-stop" role="alert">
+            <AlertTriangle size={22} aria-hidden="true" />
+            <p>{t(r.stop_reason === 'cancelled' ? 'check.stop.cancelled' : r.stop_reason === 'captcha' ? 'najiz.stop.captcha' : 'check.stop.other')}</p>
+          </div>
+          {r.cases.some((c) => c.step === 'checked') && <CheckProgress run={r} />}
+        </>
+      )}
+    </Dialog>
+  );
+}
+
+function CheckProgress({ run }: { run: NajizRun }) {
+  const { t } = useI18n();
+  const reading = run.stage === 'working' ? run.cases.find((c) => c.step === 'waiting')?.debt_id : undefined;
+  return (
+    <ul className="run-list check-list" aria-live="polite">
+      {run.cases.map((c) => {
+        const meaning = najizMeaning(c.najiz_status);
+        return (
+          <li key={c.debt_id} className={`run run-${c.step}`}>
+            <div className="run-head">
+              <span>
+                <strong>{c.full_name}</strong>
+                <span className="ref">{c.ref_code}</span>
+              </span>
+              <span className="code">
+                <bdi dir="ltr">{c.request_number}</bdi>
+              </span>
+            </div>
+            <p className="run-state">
+              {c.step === 'checked' ? (
+                <>
+                  <CheckCircle2 size={16} aria-hidden="true" />
+                  <span lang="ar" dir="rtl">{c.najiz_status}</span>
+                  {meaning && <span className="muted check-meaning">{t(meaning)}</span>}
+                </>
+              ) : c.debt_id === reading ? (
+                <>
+                  <Loader2 size={15} className="spin" aria-hidden="true" />
+                  {t('check.reading')}
+                </>
+              ) : c.step === 'stopped' || run.stage !== 'working' ? (
+                <span className="muted">{t('check.notChecked')}</span>
+              ) : (
+                <span className="muted">{t('najiz.queued')}</span>
+              )}
+            </p>
+          </li>
+        );
+      })}
     </ul>
   );
 }

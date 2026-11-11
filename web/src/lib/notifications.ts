@@ -16,6 +16,7 @@ export function notificationText(n: Notification, t: I18n['t']): string {
     amount: d.amount ? groupDigits(d.amount) : '',
     reminders: d.reminders ?? 0,
     number: d.number ?? '',
+    status: d.status ?? '',
   };
   const event = d.event ?? legacyEvent(n);
   switch (event) {
@@ -42,6 +43,7 @@ export function notificationText(n: Notification, t: I18n['t']): string {
     case 'maybe_not_sent':
     case 'najiz_filed':
     case 'najiz_stopped':
+    case 'najiz_status':
       return t(`note.${event}`, vars);
     default:
       return n.title;
@@ -65,10 +67,12 @@ function legacyEvent(n: Notification): string | undefined {
   }
 }
 
-/** Where a notification leads: the debtor's page when it is about one debtor. */
+/** Where a notification leads: the legal case for Najiz news, the debtor's page when it is about one debtor. */
 export function notificationLink(n: Notification): string | null {
   const event = n.data?.event ?? legacyEvent(n);
   if (event === 'receipt' || event === 'dispute') return '/approvals';
+  // Najiz news about one case opens that case.
+  if ((event === 'najiz_filed' || event === 'najiz_status') && n.target_table === 'app.debts' && n.target_id) return `/legal/case/${n.target_id}`;
   if (n.data?.debtor_id) return `/debtors/${n.data.debtor_id}`;
   if (event === 'legal_ready' || event === 'najiz_stopped') return '/legal';
   return null;

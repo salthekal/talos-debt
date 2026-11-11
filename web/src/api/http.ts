@@ -150,6 +150,8 @@ export const httpSource: DataSource = {
   startNajizRun: async (debtIds, opts) =>
     (await request<{ run: NajizRun }>('POST', '/api/najiz/runs', { debt_ids: debtIds, ...(opts?.checkedNotOnNajiz ? { checked_not_on_najiz: true } : {}) })).run,
   najizRun: async (id) => (await request<{ run: NajizRun }>('GET', `/api/najiz/runs/${id}`)).run,
+  startNajizCheck: async (debtIds) =>
+    (await request<{ run: NajizRun }>('POST', '/api/najiz/checks', debtIds ? { debt_ids: debtIds } : {})).run,
   cancelNajizRun: async (id) => {
     await request('POST', `/api/najiz/runs/${id}/cancel`, {});
   },

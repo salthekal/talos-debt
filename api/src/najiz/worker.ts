@@ -94,7 +94,6 @@ export class NajizWorker {
     let current: Item | null = null;
     log.info({ run: run.id, client: run.client_id, kind: run.kind }, 'najiz: run started');
     try {
-      if (run.kind !== 'file') throw new NajizStop('unexpected_page', 'This kind of Najiz run is not built yet');
       const login = await this.tenant(run, async (db) =>
         (await db.query(`SELECT owner_id_number, unified_number FROM app.clients WHERE id = app.current_client_id()`)).rows[0],
       );
@@ -139,6 +138,16 @@ export class NajizWorker {
       );
       if (!working) return;
       await site.chooseCompany(login.unified_number);
+
+      if (run.kind === 'status_check') {
+        const checked = await this.checkAll(run, site, (item) => (current = item));
+        current = null;
+        await this.tenant(run, (db) =>
+          db.query(`UPDATE app.najiz_runs SET stage = 'done', finished_at = now() WHERE id = $1 AND stage = 'working'`, [run.id]),
+        );
+        log.info({ run: run.id, requests: checked }, 'najiz: status check finished');
+        return;
+      }
 
       // B. One request per note, in the order the client chose them.
       const items = await this.tenant(run, async (db) =>
@@ -185,9 +194,9 @@ export class NajizWorker {
             `INSERT INTO app.notifications (client_id, kind, title, target_table, target_id, data)
              VALUES (app.current_client_id(), 'system', $1, 'app.najiz_runs', $2, $3)`,
             [
-              'Filing on Najiz stopped. Check the Legal page.',
+              run.kind === 'file' ? 'Filing on Najiz stopped. Check the Legal page.' : 'The Najiz status check stopped.',
               run.id,
-              JSON.stringify({ event: 'najiz_stopped', reason: stop.reason, maybe_sent: stop.afterSend && current ? 1 : 0 }),
+              JSON.stringify({ event: 'najiz_stopped', kind: run.kind, reason: stop.reason, maybe_sent: stop.afterSend && current ? 1 : 0 }),
             ],
           );
         }
@@ -196,6 +205,57 @@ export class NajizWorker {
       clearInterval(beat);
       await site.close();
     }
+  }
+
+  /**
+   * C. Read the status of each request (5.5). A status that changed is saved
+   * on the case with a history row, and the client is told.
+   */
+  private async checkAll(run: ClaimedRun, site: NajizSite, onItem: (i: Item) => void): Promise<number> {
+    const items = await this.tenant(run, async (db) =>
+      (await db.query<Item & { request_number: string }>(
+        `SELECT id, legal_case_id, request_number FROM app.najiz_run_items WHERE run_id = $1 AND step = 'waiting' ORDER BY position`,
+        [run.id],
+      )).rows,
+    );
+    for (const item of items) {
+      if (await this.tenant(run, (db) => isFinished(db, run.id))) return items.length;
+      onItem(item);
+      const read = await site.checkStatus(item.request_number);
+      await this.tenant(run, async (db) => {
+        const before = (await db.query(
+          `SELECT l.status, l.najiz_status, l.debt_id, d.ref_code, dr.full_name, d.debtor_id
+             FROM app.legal_cases l JOIN app.debts d ON d.id = l.debt_id JOIN app.debtors dr ON dr.id = d.debtor_id
+            WHERE l.id = $1`,
+          [item.legal_case_id],
+        )).rows[0];
+        await db.query(
+          `UPDATE app.legal_cases SET najiz_status = $2, najiz_circuit = coalesce($3, najiz_circuit),
+                  najiz_status_checked_at = now(), updated_at = now()
+            WHERE id = $1`,
+          [item.legal_case_id, read.status, read.circuit],
+        );
+        await db.query(`UPDATE app.najiz_run_items SET step = 'checked', najiz_status = $2, updated_at = now() WHERE id = $1`, [item.id, read.status]);
+        if (before && before.najiz_status !== read.status) {
+          await db.query(
+            `INSERT INTO app.legal_case_events (client_id, legal_case_id, status, najiz_status, source)
+             VALUES (app.current_client_id(), $1, $2, $3, 'najiz_check')`,
+            [item.legal_case_id, before.status, read.status],
+          );
+          await db.query(
+            `INSERT INTO app.notifications (client_id, kind, title, target_table, target_id, data)
+             VALUES (app.current_client_id(), 'system', $1, 'app.debts', $2, $3)`,
+            [
+              `Najiz request ${item.request_number}: ${read.status}`,
+              before.debt_id,
+              JSON.stringify({ event: 'najiz_status', name: before.full_name, ref: before.ref_code, number: item.request_number,
+                status: read.status, debtor_id: before.debtor_id }),
+            ],
+          );
+        }
+      });
+    }
+    return items.length;
   }
 
   /**

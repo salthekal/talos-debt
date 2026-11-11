@@ -101,3 +101,19 @@ looks for is in `WORDS` at the top of that file.
   with a message to write it in Arabic. Countries use their Arabic names.
 - The bank chosen on Najiz must be written as Najiz lists it; otherwise the run
   stops with "not in the Najiz list".
+
+## Status checks (5.5)
+
+The robot follows section C: it opens "التنفيذ", types the request number in
+"رقم الطلب", presses "بحث", opens the request and reads "حالة الطلب" and
+"الدائرة". One Nafath approval covers every request in the round.
+
+Statuses are kept exactly as Najiz writes them. The dashboard explains two of
+them (Sal, 11 November 2026):
+
+| On Najiz | What the client reads |
+|---|---|
+| قيد المعالجة | Najiz is reviewing the request. Nothing to do yet. |
+| قيد التنفيذ | The court accepted the request and is carrying it out. |
+
+Any other status is shown as Najiz writes it, with no explanation added.
